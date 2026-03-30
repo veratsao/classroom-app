@@ -12,8 +12,16 @@ async function gsLoad() {
   return data;
 }
 
+function pingUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = img.onerror = () => resolve();
+    setTimeout(resolve, 5000); // 最多等5秒
+    img.src = url;
+  });
+}
+
 async function gsSave(payload) {
-  // 分批儲存每個分頁，避免網址過長
   const sheets = [
     { sheet: "students",         data: payload.students },
     { sheet: "assignments",      data: payload.assignments },
@@ -24,10 +32,7 @@ async function gsSave(payload) {
   for (const item of sheets) {
     const encoded = encodeURIComponent(JSON.stringify(item.data));
     const url = `${APPS_SCRIPT_URL}?action=save&sheet=${item.sheet}&data=${encoded}`;
-    const res = await fetch(url, { redirect: "follow" });
-    const text = await res.text();
-    const result = JSON.parse(text);
-    if (result && result.error) throw new Error(result.error);
+    await pingUrl(url);
   }
 }
 
