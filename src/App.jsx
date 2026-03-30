@@ -5,34 +5,30 @@ import { useState, useEffect } from "react";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdkquDzl1hlDPODmsmDh5moRgwPjJg3UTa3PgyqLAjQ2KtXDFzkMchmmRpQX6y0e8pvg/exec";
 
 async function gsLoad() {
-  const data = await jsonp(`${APPS_SCRIPT_URL}?action=load`);
+  const res = await fetch(`${APPS_SCRIPT_URL}?action=load`, { redirect: "follow" });
+  const text = await res.text();
+  const data = JSON.parse(text);
   if (data.error) throw new Error(data.error);
   return data;
 }
 
 async function gsSave(payload) {
-  const encoded = encodeURIComponent(JSON.stringify(payload));
-  const data = await jsonp(`${APPS_SCRIPT_URL}?action=save&data=${encoded}`);
-  if (data && data.error) throw new Error(data.error);
-}
-
-function jsonp(url) {
-  return new Promise((resolve, reject) => {
-    const cb = "cb_" + Date.now();
-    const script = document.createElement("script");
-    window[cb] = (data) => {
-      delete window[cb];
-      document.body.removeChild(script);
-      resolve(data);
-    };
-    script.onerror = () => {
-      delete window[cb];
-      document.body.removeChild(script);
-      reject(new Error("網路錯誤"));
-    };
-    script.src = url + "&callback=" + cb;
-    document.body.appendChild(script);
-  });
+  // 分批儲存每個分頁，避免網址過長
+  const sheets = [
+    { sheet: "students",         data: payload.students },
+    { sheet: "assignments",      data: payload.assignments },
+    { sheet: "progress",         data: payload.progress },
+    { sheet: "english_progress", data: payload.english_progress },
+    { sheet: "categories",       data: payload.categories },
+  ];
+  for (const item of sheets) {
+    const encoded = encodeURIComponent(JSON.stringify(item.data));
+    const url = `${APPS_SCRIPT_URL}?action=save&sheet=${item.sheet}&data=${encoded}`;
+    const res = await fetch(url, { redirect: "follow" });
+    const text = await res.text();
+    const result = JSON.parse(text);
+    if (result && result.error) throw new Error(result.error);
+  }
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
