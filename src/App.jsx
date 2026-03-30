@@ -387,12 +387,19 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
             </div>
             {unfinished.length === 0
               ? <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 全部完成！</div>
-              : unfinished.map(a => (
-                <div key={a.id} style={{ padding: "4px 0", color: "#374151", display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ background: catColor(a.category) + "22", color: catColor(a.category), borderRadius: 10, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>{a.category}</span>
-                  ・{a.name}（{STATUS[getStatus(a.id, filter)]}）
-                </div>
-              ))}
+              : unfinished.map(a => {
+                  const st = getStatus(a.id, filter);
+                  return (
+                    <div key={a.id} style={{ padding: "6px 0", color: "#374151", display: "flex", gap: 8, alignItems: "center", borderBottom: "1px solid #f3f4f6" }}>
+                      <span style={{ background: catColor(a.category) + "22", color: catColor(a.category), borderRadius: 10, padding: "1px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{a.category}</span>
+                      <span style={{ flex: 1, fontSize: 14 }}>・{a.name}</span>
+                      <button onClick={() => cycleStatus(a.id, filter)}
+                        style={{ border: "none", borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, background: STATUS_COLOR[st], color: st === 0 ? "#9ca3af" : "#1f2937", transition: "all .15s", whiteSpace: "nowrap" }}>
+                        {STATUS[st]} →{STATUS[(st + 1) % 3]}
+                      </button>
+                    </div>
+                  );
+                })}
           </div>
         )}
       </div>
@@ -557,6 +564,7 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
   const [printType, setPrintType] = useState("overview");
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [catFilter, setCatFilter] = useState("全部");
+  const [engSection, setEngSection] = useState("both"); // "both" | "first" | "second"
 
   const getStatus = (aid, sn) => progress[aid]?.[sn] ?? 0;
 
@@ -598,13 +606,14 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
             const st = getStatus(a.id, s.number);
             return `<tr><td style="background:${catColor(a.category)}22;color:${catColor(a.category)};font-size:10px;white-space:nowrap">${a.category||""}</td><td style="text-align:left">${a.name}</td><td style="background:${["#e5e7eb","#fb923c","#4ade80"][st]}">${STATUS[st]}</td></tr>`;
           }).join("");
-      return `<div class="card"><div class="card-header">${s.number} 號 ${s.name}</div><table><thead><tr><th>分類</th><th>作業</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      return `<div class="card"><div class="card-header">${s.number} 號 ${s.name}&nbsp;<span style="font-weight:400;font-size:11px;color:#f97316">未完成進度：${missing.length} 項</span></div><table><thead><tr><th>分類</th><th>作業</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }).join("");
     return `<h3>學生欠繳單${catFilter !== "全部" ? ` — ${catFilter}` : ""} — ${today()}</h3><div class="four-up">${slips}</div>`;
   };
 
   const buildEnglishHTML = () => {
-    const sections = [["U1～5",[1,2,3,4,5]],["U6～10",[6,7,8,9,10]]];
+    const allSections = [["U1～5",[1,2,3,4,5]],["U6～10",[6,7,8,9,10]]];
+    const sections = engSection === "first" ? [allSections[0]] : engSection === "second" ? [allSections[1]] : allSections;
     return `<h3>英文進度總覽 — ${today()}</h3>` + sections.map(([label, units]) => {
       const ths = units.flatMap(u => [1,2,3,4].map(p => `<th>U${u}-P${p}</th>`)).join("");
       const rows = students.map(s =>
@@ -697,8 +706,9 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
             const missing = filteredAssignments.filter(a => getStatus(a.id, s.number) < 2);
             return (
               <div key={s.number} style={{ border: "2px solid #f97316", borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700, borderBottom: "1px solid #fed7aa", paddingBottom: 4, marginBottom: 8, fontSize: 13 }}>
-                  {s.number} 號 {s.name}
+                <div style={{ fontWeight: 700, borderBottom: "1px solid #fed7aa", paddingBottom: 4, marginBottom: 8, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{s.number} 號 {s.name}</span>
+                  <span style={{ fontWeight: 400, fontSize: 11, color: "#f97316" }}>未完成進度：{missing.length} 項</span>
                 </div>
                 <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
                   <thead><tr><th style={pth}>分類</th><th style={pth}>作業</th><th style={pth}>狀態</th></tr></thead>
@@ -725,35 +735,39 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
     );
   };
 
-  const PreviewEnglish = () => (
-    <div style={{ overflowX: "auto" }}>
-      <h3 style={{ color: "#f97316", marginBottom: 10 }}>英文進度總覽 — {today()}</h3>
-      {[["U1～5",[1,2,3,4,5]],["U6～10",[6,7,8,9,10]]].map(([label, units]) => (
-        <div key={label} style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
-            <thead>
-              <tr>
-                <th style={pth}>號</th><th style={pth}>姓名</th>
-                {units.flatMap(u => [1,2,3,4].map(p => <th key={`${u}${p}`} style={pth}>U{u}-P{p}</th>))}
-              </tr>
-            </thead>
-            <tbody>
-              {students.map(s => (
-                <tr key={s.number}>
-                  <td style={ptd}>{s.number}</td><td style={ptd}>{s.name}</td>
-                  {units.flatMap(u => [1,2,3,4].map(p => {
-                    const done = !!engProgress[`U${u}-P${p}-${s.number}`];
-                    return <td key={`${u}${p}`} style={{ ...ptd, background: done ? "#4ade80" : "#fee2e2" }}>{done ? "✓" : ""}</td>;
-                  }))}
+  const PreviewEnglish = () => {
+    const allSections = [["U1～5",[1,2,3,4,5]],["U6～10",[6,7,8,9,10]]];
+    const sections = engSection === "first" ? [allSections[0]] : engSection === "second" ? [allSections[1]] : allSections;
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <h3 style={{ color: "#f97316", marginBottom: 10 }}>英文進度總覽 — {today()}</h3>
+        {sections.map(([label, units]) => (
+          <div key={label} style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
+              <thead>
+                <tr>
+                  <th style={pth}>號</th><th style={pth}>姓名</th>
+                  {units.flatMap(u => [1,2,3,4].map(p => <th key={`${u}${p}`} style={pth}>U{u}-P{p}</th>))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </div>
-  );
+              </thead>
+              <tbody>
+                {students.map(s => (
+                  <tr key={s.number}>
+                    <td style={ptd}>{s.number}</td><td style={ptd}>{s.name}</td>
+                    {units.flatMap(u => [1,2,3,4].map(p => {
+                      const done = !!engProgress[`U${u}-P${p}-${s.number}`];
+                      return <td key={`${u}${p}`} style={{ ...ptd, background: done ? "#4ade80" : "#fee2e2" }}>{done ? "✓" : ""}</td>;
+                    }))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -786,7 +800,20 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
           </>
         )}
 
-        {/* Student selector for debt */}
+        {/* English section selector */}
+        {printType === "english" && (
+          <>
+            <div style={{ fontWeight: 700, color: "#374151", marginBottom: 10 }}>選擇範圍</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+              {[["both","全部（U1～10）"],["first","只印 U1～5"],["second","只印 U6～10"]].map(([v,l]) => (
+                <button key={v} onClick={() => setEngSection(v)}
+                  style={{ ...chipBtn, background: engSection === v ? "#f97316" : "#f3f4f6", color: engSection === v ? "#fff" : "#374151", border: engSection === v ? "none" : "1.5px solid #e5e7eb", padding: "8px 18px", fontWeight: 700 }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {printType === "debt" && (
           <>
             <div style={{ fontWeight: 700, color: "#374151", marginBottom: 10 }}>選擇學生（不選則全班）</div>
