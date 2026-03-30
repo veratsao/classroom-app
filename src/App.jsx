@@ -2,25 +2,37 @@ import { useState, useEffect } from "react";
 
 // ─── Google Sheets API ───────────────────────────────────────────────────────
 // 部署 Apps Script 後，把網址貼到這裡
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxRcrvp1l0HmcWydyo1EnM073FEW8lp_jHc1nkLI4Bhb3oDd8cD7sw613jtWCW5G4Em/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdkquDzl1hlDPODmsmDh5moRgwPjJg3UTa3PgyqLAjQ2KtXDFzkMchmmRpQX6y0e8pvg/exec";
 
 async function gsLoad() {
-  const res = await fetch(`${APPS_SCRIPT_URL}?action=load`);
-  if (!res.ok) throw new Error("載入失敗");
-  const data = await res.json();
+  const data = await jsonp(`${APPS_SCRIPT_URL}?action=load`);
   if (data.error) throw new Error(data.error);
   return data;
 }
 
 async function gsSave(payload) {
-  const res = await fetch(APPS_SCRIPT_URL + "?action=save", {
-    method: "POST",
-    body: JSON.stringify(payload),
+  const encoded = encodeURIComponent(JSON.stringify(payload));
+  const data = await jsonp(`${APPS_SCRIPT_URL}?action=save&data=${encoded}`);
+  if (data && data.error) throw new Error(data.error);
+}
+
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const cb = "cb_" + Date.now();
+    const script = document.createElement("script");
+    window[cb] = (data) => {
+      delete window[cb];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    script.onerror = () => {
+      delete window[cb];
+      document.body.removeChild(script);
+      reject(new Error("網路錯誤"));
+    };
+    script.src = url + "&callback=" + cb;
+    document.body.appendChild(script);
   });
-  if (!res.ok) throw new Error("儲存失敗");
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return data;
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
