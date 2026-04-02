@@ -72,8 +72,9 @@ export default function App() {
         // progress: flat rows → nested map
         const pm = {};
         (data.progress || []).forEach(({ assignment_id, student_number, status }) => {
-          if (!pm[assignment_id]) pm[assignment_id] = {};
-          pm[assignment_id][Number(student_number)] = Number(status);
+          const aid = String(assignment_id);
+          if (!pm[aid]) pm[aid] = {};
+          pm[aid][Number(student_number)] = Number(status);
         });
         setProgress(pm);
 
