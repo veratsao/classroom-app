@@ -1,24 +1,20 @@
 import { useState, useEffect } from "react";
 
-// ─── Google Sheets API ───────────────────────────────────────────────────────
-// 部署 Apps Script 後，把網址貼到這裡
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwdkquDzl1hlDPODmsmDh5moRgwPjJg3UTa3PgyqLAjQ2KtXDFzkMchmmRpQX6y0e8pvg/exec";
+// ─── SheetDB API ─────────────────────────────────────────────────────────────
+const SHEETDB_URL = "https://sheetdb.io/api/v1/ye73f0k0ui39r";
 
 async function gsLoad() {
-  const res = await fetch(`${APPS_SCRIPT_URL}?action=load`, { redirect: "follow" });
-  const text = await res.text();
-  const data = JSON.parse(text);
-  if (data.error) throw new Error(data.error);
-  return data;
-}
-
-function pingUrl(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = img.onerror = () => resolve();
-    setTimeout(resolve, 5000); // 最多等5秒
-    img.src = url;
-  });
+  const sheets = ["students", "assignments", "progress", "english_progress", "categories"];
+  const results = await Promise.all(sheets.map(s =>
+    fetch(`${SHEETDB_URL}?sheet=${s}`).then(r => r.json())
+  ));
+  return {
+    students: results[0],
+    assignments: results[1],
+    progress: results[2],
+    english_progress: results[3],
+    categories: results[4],
+  };
 }
 
 async function gsSave(payload) {
@@ -30,9 +26,16 @@ async function gsSave(payload) {
     { sheet: "categories",       data: payload.categories },
   ];
   for (const item of sheets) {
-    const encoded = encodeURIComponent(JSON.stringify(item.data));
-    const url = `${APPS_SCRIPT_URL}?action=save&sheet=${item.sheet}&data=${encoded}`;
-    await pingUrl(url);
+    // 先刪除所有資料
+    await fetch(`${SHEETDB_URL}/all?sheet=${item.sheet}`, { method: "DELETE" });
+    // 再寫入新資料
+    if (item.data && item.data.length > 0) {
+      await fetch(`${SHEETDB_URL}?sheet=${item.sheet}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: item.data }),
+      });
+    }
   }
 }
 
@@ -61,33 +64,43 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
+        console.log("🔄 開始載入資料...");
         const data = await gsLoad();
+        console.log("✅ 載入成功：", data);
 
         // students
-        setStudents((data.students || []).map(s => ({ number: Number(s.number), name: s.name })));
+        const s = (data.students || []).map(s => ({ number: Number(s.number), name: s.name }));
+        console.log("學生：", s);
+        setStudents(s);
 
         // assignments
-        setAssignments((data.assignments || []).map(a => ({ id: String(a.id), name: a.name, date: a.date, category: a.category || "其他" })));
+        const a = (data.assignments || []).map(a => ({ id: Number(a.id), name: a.name, date: a.date, category: a.category || "其他" }));
+        console.log("作業：", a);
+        setAssignments(a);
 
         // progress: flat rows → nested map
         const pm = {};
         (data.progress || []).forEach(({ assignment_id, student_number, status }) => {
-          const aid = String(assignment_id);
+          const aid = Number(assignment_id);
           if (!pm[aid]) pm[aid] = {};
           pm[aid][Number(student_number)] = Number(status);
         });
+        console.log("進度：", pm);
         setProgress(pm);
 
         // english_progress: rows → key/date map
         const em = {};
         (data.english_progress || []).forEach(({ key, date }) => { em[key] = date; });
+        console.log("英文進度：", em);
         setEngProgress(em);
 
         // categories
         const cats = (data.categories || []).map(c => c.name).filter(Boolean);
         if (cats.length) setCategories(cats);
+        console.log("分類：", cats);
 
       } catch (err) {
+        console.error("❌ 載入失敗：", err);
         setLoadMsg("⚠ 無法連線，使用本地模式（" + err.message + "）");
       } finally {
         setLoaded(true);
