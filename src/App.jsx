@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 const SHEETDB_URL = "https://sheetdb.io/api/v1/ye73f0k0ui39r";
 
 async function gsLoad() {
-  const sheets = ["students", "assignments", "progress", "english_progress", "categories"];
+  const sheets = ["students", "assignments", "progress", "english_progress", "categories", "todos"];
   const results = await Promise.all(sheets.map(s =>
     fetch(`${SHEETDB_URL}?sheet=${s}`).then(r => r.json())
   ));
@@ -14,6 +14,7 @@ async function gsLoad() {
     progress: results[2],
     english_progress: results[3],
     categories: results[4],
+    todos: results[5],
   };
 }
 
@@ -24,11 +25,10 @@ async function gsSave(payload) {
     { sheet: "progress",         data: payload.progress },
     { sheet: "english_progress", data: payload.english_progress },
     { sheet: "categories",       data: payload.categories },
+    { sheet: "todos",            data: payload.todos },
   ];
   for (const item of sheets) {
-    // 先刪除所有資料
     await fetch(`${SHEETDB_URL}/all?sheet=${item.sheet}`, { method: "DELETE" });
-    // 再寫入新資料
     if (item.data && item.data.length > 0) {
       await fetch(`${SHEETDB_URL}?sheet=${item.sheet}`, {
         method: "POST",
@@ -45,7 +45,7 @@ const STATUS = ["未繳", "訂正", "完成"];
 const STATUS_COLOR = ["#e5e7eb", "#fb923c", "#4ade80"];
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
-const TABS = ["學生名單", "每日進度", "英文作業", "表格列印"];
+const TABS = ["學生名單", "每日進度", "英文作業", "待辦事項", "表格列印"];
 
 const DEFAULT_CATEGORIES = ["評量", "背書", "考卷", "其他"];
 
@@ -56,6 +56,7 @@ export default function App() {
   const [progress, setProgress] = useState({});
   const [engProgress, setEngProgress] = useState({});
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [todos, setTodos] = useState([]); // [{id, title, student_number, done}]
   const [saving, setSaving] = useState(false);
   const [loadMsg, setLoadMsg] = useState("載入中…");
   const [loaded, setLoaded] = useState(false);
@@ -99,6 +100,16 @@ export default function App() {
         if (cats.length) setCategories(cats);
         console.log("分類：", cats);
 
+        // todos
+        const todosData = (data.todos || []).map(t => ({
+          id: String(t.id),
+          title: t.title,
+          student_number: Number(t.student_number),
+          done: t.done === "true" || t.done === true,
+        }));
+        setTodos(todosData);
+        console.log("待辦：", todosData);
+
       } catch (err) {
         console.error("❌ 載入失敗：", err);
         setLoadMsg("⚠ 無法連線，使用本地模式（" + err.message + "）");
@@ -132,6 +143,7 @@ export default function App() {
         progress: progressRows,
         english_progress: epRows,
         categories: catRows,
+        todos,
       });
 
       alert("✅ 儲存成功！");
@@ -175,7 +187,8 @@ export default function App() {
         {tab === 0 && <StudentTab students={students} setStudents={setStudents} />}
         {tab === 1 && <DailyTab students={students} assignments={assignments} setAssignments={setAssignments} progress={progress} setProgress={setProgress} categories={categories} setCategories={setCategories} />}
         {tab === 2 && <EnglishTab students={students} engProgress={engProgress} setEngProgress={setEngProgress} />}
-        {tab === 3 && <PrintTab students={students} assignments={assignments} progress={progress} engProgress={engProgress} categories={categories} />}
+        {tab === 3 && <TodoTab students={students} todos={todos} setTodos={setTodos} />}
+        {tab === 4 && <PrintTab students={students} assignments={assignments} progress={progress} engProgress={engProgress} categories={categories} />}
       </main>
     </div>
   );
@@ -275,8 +288,8 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
 
   const addAssign = () => {
     if (!newAssign.trim()) return;
-    const id = Date.now().toString();
-    setAssignments(prev => [...prev, { id, name: newAssign.trim(), date: today(), category: newAssignCat || categories[0] || "其他" }]);
+    const id = Date.now();
+    setAssignments(prev => [{ id, name: newAssign.trim(), date: today(), category: newAssignCat || categories[0] || "其他" }, ...prev]);
     setNewAssign("");
   };
 
@@ -572,8 +585,164 @@ const thStyle = (extra = {}) => ({
 });
 
 // ═══════════════════════════════════════════════════════════════
-// TAB 4: 表格列印
+// TAB 4: 待辦事項
 // ═══════════════════════════════════════════════════════════════
+function TodoTab({ students, todos, setTodos }) {
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [newTitles, setNewTitles] = useState(""); // 多行文字，每行一個事項
+  const [selectedFor, setSelectedFor] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const toggleForStudent = (n) => setSelectedFor(prev =>
+    prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]
+  );
+
+  const selectAll = () => setSelectedFor(students.map(s => s.number));
+  const clearAll = () => setSelectedFor([]);
+
+  const addTodo = () => {
+    const lines = newTitles.split("\n").map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0 || selectedFor.length === 0) return;
+    const ts = Date.now();
+    const newItems = [];
+    lines.forEach((title, li) => {
+      selectedFor.forEach((sn, si) => {
+        newItems.push({
+          id: `${ts}-${li}-${si}-${sn}`,
+          title,
+          student_number: sn,
+          done: false,
+        });
+      });
+    });
+    setTodos(prev => [...newItems, ...prev]);
+    setNewTitles("");
+    setSelectedFor([]);
+    setShowAdd(false);
+  };
+
+  const toggleDone = (id) => {
+    setTodos(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  };
+
+  const deleteTodo = (id) => {
+    setTodos(prev => prev.filter(t => t.id !== id));
+  };
+
+  const studentTodos = selectedStudent !== null
+    ? todos.filter(t => t.student_number === selectedStudent)
+    : [];
+
+  const pendingCount = (sn) => todos.filter(t => t.student_number === sn && !t.done).length;
+
+  const lineCount = newTitles.split("\n").filter(l => l.trim()).length;
+
+  return (
+    <div>
+      <h2 style={h2}>📝 待辦事項</h2>
+
+      {/* Add todo */}
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showAdd ? 14 : 0 }}>
+          <div style={{ fontWeight: 700, color: "#374151" }}>➕ 新增待辦事項</div>
+          <button onClick={() => setShowAdd(!showAdd)} style={{ ...btnGray, padding: "4px 14px", fontSize: 13 }}>
+            {showAdd ? "收起 ▲" : "新增 ▼"}
+          </button>
+        </div>
+        {showAdd && (
+          <>
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 6 }}>每行一個事項，可一次新增多項：</div>
+              <textarea value={newTitles} onChange={e => setNewTitles(e.target.value)}
+                placeholder={"例：\n國語第三課預習\n數學練習卷簽名\n聯絡簿家長回覆"}
+                style={{ ...inp, width: "100%", height: 110, resize: "vertical", lineHeight: 1.6 }} />
+              {lineCount > 0 && (
+                <div style={{ fontSize: 12, color: "#f97316", marginTop: 4 }}>
+                  將新增 {lineCount} 項事項
+                </div>
+              )}
+            </div>
+            <div style={{ fontWeight: 700, color: "#374151", marginBottom: 8, fontSize: 13, marginTop: 12 }}>選擇學生：</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+              <button onClick={selectAll} style={{ ...btnOrange, padding: "4px 12px", fontSize: 12 }}>全選</button>
+              <button onClick={clearAll} style={{ ...btnGray, padding: "4px 12px", fontSize: 12 }}>清除</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+              {students.map(s => (
+                <button key={s.number} onClick={() => toggleForStudent(s.number)}
+                  style={{ ...chipBtn, background: selectedFor.includes(s.number) ? "#f97316" : "#f3f4f6", color: selectedFor.includes(s.number) ? "#fff" : "#374151" }}>
+                  {s.number} {s.name}
+                </button>
+              ))}
+            </div>
+            <button onClick={addTodo} disabled={lineCount === 0 || selectedFor.length === 0}
+              style={{ ...btnOrange, opacity: (lineCount === 0 || selectedFor.length === 0) ? 0.4 : 1 }}>
+              新增 {lineCount > 0 ? `${lineCount} 項` : ""}（已選 {selectedFor.length} 人）
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Student selector */}
+      <div style={card}>
+        <div style={{ fontWeight: 700, color: "#374151", marginBottom: 12 }}>👤 點選學生查看待辦</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {students.map(s => {
+            const count = pendingCount(s.number);
+            return (
+              <button key={s.number} onClick={() => setSelectedStudent(selectedStudent === s.number ? null : s.number)}
+                style={{
+                  ...chipBtn,
+                  background: selectedStudent === s.number ? "#f97316" : "#f3f4f6",
+                  color: selectedStudent === s.number ? "#fff" : "#374151",
+                  position: "relative", paddingRight: count > 0 ? 28 : 14
+                }}>
+                {s.number} {s.name}
+                {count > 0 && (
+                  <span style={{
+                    position: "absolute", top: -6, right: -4,
+                    background: "#ef4444", color: "#fff", borderRadius: 10,
+                    fontSize: 10, fontWeight: 700, padding: "1px 5px", lineHeight: 1.4
+                  }}>{count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Todo list for selected student */}
+      {selectedStudent !== null && (
+        <div style={card}>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "#f97316", marginBottom: 14 }}>
+            {students.find(s => s.number === selectedStudent)?.name} 的待辦事項
+          </div>
+          {studentTodos.length === 0
+            ? <div style={{ color: "#9ca3af", textAlign: "center", padding: 20 }}>沒有待辦事項 🎉</div>
+            : studentTodos.map(t => (
+              <div key={t.id} style={{
+                display: "flex", alignItems: "center", gap: 12, padding: "10px 0",
+                borderBottom: "1px solid #f3f4f6", opacity: t.done ? 0.5 : 1
+              }}>
+                <button onClick={() => toggleDone(t.id)} style={{
+                  width: 28, height: 28, borderRadius: "50%", border: "2px solid",
+                  borderColor: t.done ? "#4ade80" : "#d1d5db",
+                  background: t.done ? "#4ade80" : "#fff",
+                  cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center",
+                  flexShrink: 0
+                }}>{t.done ? "✓" : ""}</button>
+                <span style={{ flex: 1, fontSize: 15, textDecoration: t.done ? "line-through" : "none", color: "#374151" }}>
+                  {t.title}
+                </span>
+                <button onClick={() => deleteTodo(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", fontSize: 16 }}>🗑</button>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PrintTab({ students, assignments, progress, engProgress, categories }) {
   const [printType, setPrintType] = useState("overview");
   const [selectedStudents, setSelectedStudents] = useState([]);
@@ -618,7 +787,9 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
         ? `<tr><td colspan="3" style="color:#4ade80;text-align:center">✅ 全部完成</td></tr>`
         : missing.map(a => {
             const st = getStatus(a.id, s.number);
-            return `<tr><td style="background:${catColor(a.category)}22;color:${catColor(a.category)};font-size:10px;white-space:nowrap">${a.category||""}</td><td style="text-align:left">${a.name}</td><td style="background:${["#e5e7eb","#fb923c","#4ade80"][st]}">${STATUS[st]}</td></tr>`;
+            const isBookRecite = a.category === "背書";
+            const align = isBookRecite ? "right" : "left";
+            return `<tr><td style="background:${catColor(a.category)}22;color:${catColor(a.category)};font-size:10px;white-space:nowrap;text-align:${align}">${a.category||""}</td><td style="text-align:${align}">${a.name}</td><td style="background:${["#e5e7eb","#fb923c","#4ade80"][st]}">${STATUS[st]}</td></tr>`;
           }).join("");
       return `<div class="card"><div class="card-header">${s.number} 號 ${s.name}&nbsp;<span style="font-weight:400;font-size:11px;color:#f97316">未完成進度：${missing.length} 項</span></div><table><thead><tr><th>分類</th><th>作業</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }).join("");
@@ -731,10 +902,12 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
                       ? <tr><td colSpan={3} style={{ ...ptd, color: "#4ade80", textAlign: "center" }}>✅ 全部完成</td></tr>
                       : missing.map(a => {
                           const st = getStatus(a.id, s.number);
+                          const isBookRecite = a.category === "背書";
+                          const align = isBookRecite ? "right" : "left";
                           return (
                             <tr key={a.id}>
-                              <td style={{ ...ptd, background: catColor(a.category) + "22", color: catColor(a.category), fontSize: 10, whiteSpace: "nowrap" }}>{a.category}</td>
-                              <td style={{ ...ptd, textAlign: "left" }}>{a.name}</td>
+                              <td style={{ ...ptd, background: catColor(a.category) + "22", color: catColor(a.category), fontSize: 10, whiteSpace: "nowrap", textAlign: align }}>{a.category}</td>
+                              <td style={{ ...ptd, textAlign: align }}>{a.name}</td>
                               <td style={{ ...ptd, background: STATUS_COLOR[st] }}>{STATUS[st]}</td>
                             </tr>
                           );
