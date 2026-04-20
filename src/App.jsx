@@ -1,21 +1,33 @@
 import { useState, useEffect } from "react";
 
-// ─── SheetDB API ─────────────────────────────────────────────────────────────
-const SHEETDB_URL = "https://sheetdb.io/api/v1/ye73f0k0ui39r";
+// ─── Google Apps Script API ───────────────────────────────────────────────────
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwdkquDzl1hlDPODmsmDh5moRgwPjJg3UTa3PgyqLAjQ2KtXDFzkMchmmRpQX6y0e8pvg/exec";
 
 async function gsLoad() {
-  const sheets = ["students", "assignments", "progress", "english_progress", "categories", "todos"];
-  const results = await Promise.all(sheets.map(s =>
-    fetch(`${SHEETDB_URL}?sheet=${s}`).then(r => r.json())
-  ));
-  return {
-    students: results[0],
-    assignments: results[1],
-    progress: results[2],
-    english_progress: results[3],
-    categories: results[4],
-    todos: results[5],
-  };
+  const res = await fetch(`${GAS_URL}?action=load`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+function formSubmit(sheetName, data) {
+  return new Promise((resolve) => {
+    const encoded = encodeURIComponent(JSON.stringify(data));
+    const url = `${GAS_URL}?action=save&sheet=${sheetName}&data=${encoded}`;
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none";
+    document.body.appendChild(iframe);
+    const timer = setTimeout(() => {
+      if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      resolve();
+    }, 10000);
+    iframe.onload = () => {
+      clearTimeout(timer);
+      if (document.body.contains(iframe)) document.body.removeChild(iframe);
+      resolve();
+    };
+    iframe.src = url;
+  });
 }
 
 async function gsSave(payload) {
@@ -25,17 +37,10 @@ async function gsSave(payload) {
     { sheet: "progress",         data: payload.progress },
     { sheet: "english_progress", data: payload.english_progress },
     { sheet: "categories",       data: payload.categories },
-    { sheet: "todos",            data: payload.todos },
+    { sheet: "todos",            data: payload.todos || [] },
   ];
   for (const item of sheets) {
-    await fetch(`${SHEETDB_URL}/all?sheet=${item.sheet}`, { method: "DELETE" });
-    if (item.data && item.data.length > 0) {
-      await fetch(`${SHEETDB_URL}?sheet=${item.sheet}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: item.data }),
-      });
-    }
+    await formSubmit(item.sheet, item.data);
   }
 }
 
