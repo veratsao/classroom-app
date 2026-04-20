@@ -43,11 +43,212 @@ async function gsSave(payload) {
 const today = () => new Date().toLocaleDateString("zh-TW");
 const STATUS = ["未繳", "訂正", "完成"];
 const STATUS_COLOR = ["#e5e7eb", "#fb923c", "#4ade80"];
+const TEACHER_PASSWORD = "800914";
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 const TABS = ["學生名單", "每日進度", "英文作業", "待辦事項", "表格列印"];
 
 const DEFAULT_CATEGORIES = ["評量", "背書", "考卷", "其他"];
+
+// ═══════════════════════════════════════════════════════════════
+// LOGIN SCREEN
+// ═══════════════════════════════════════════════════════════════
+function LoginScreen({ students, onTeacherLogin, onParentLogin }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  const handleLogin = () => {
+    setError("");
+    if (input === TEACHER_PASSWORD) {
+      onTeacherLogin();
+      return;
+    }
+    // Try parent login: match student number or student password
+    const sn = Number(input);
+    const student = students.find(s => s.number === sn || s.password === input);
+    if (student) {
+      onParentLogin(student);
+      return;
+    }
+    setError("密碼錯誤，請再試一次");
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#fff7ed,#fed7aa)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans TC',sans-serif" }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: "40px 36px", width: 340, boxShadow: "0 8px 40px #f9731622", textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>📚</div>
+        <div style={{ fontWeight: 800, fontSize: 22, color: "#f97316", marginBottom: 4 }}>班務作業系統</div>
+        <div style={{ color: "#9ca3af", fontSize: 13, marginBottom: 28 }}>老師請輸入管理密碼，家長請輸入學生號碼</div>
+        <div style={{ position: "relative", marginBottom: 16 }}>
+          <input
+            type={showPw ? "text" : "password"}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleLogin()}
+            placeholder="請輸入密碼或學生號碼"
+            style={{ ...inp, width: "100%", fontSize: 16, textAlign: "center", letterSpacing: 2, paddingRight: 40 }}
+            autoFocus
+          />
+          <button onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#9ca3af", fontSize: 16 }}>
+            {showPw ? "🙈" : "👁"}
+          </button>
+        </div>
+        {error && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+        <button onClick={handleLogin} style={{ ...btnOrange, width: "100%", padding: "12px 0", fontSize: 16 }}>登入</button>
+        <div style={{ marginTop: 20, fontSize: 11, color: "#d1d5db" }}>家長預設密碼為學生號碼，可登入後自行更改</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PARENT VIEW
+// ═══════════════════════════════════════════════════════════════
+function ParentView({ student, students, assignments, progress, engProgress, onLogout, onPasswordChange }) {
+  const [tab, setTab] = useState(0);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
+
+  const getStatus = (aid, sn) => progress[aid]?.[sn] ?? 0;
+  const PARENT_TABS = ["每日進度", "英文作業"];
+
+  const handleChangePw = () => {
+    if (newPw.length < 4) { setPwMsg("密碼至少需要4位"); return; }
+    if (newPw !== confirmPw) { setPwMsg("兩次輸入不一致"); return; }
+    onPasswordChange(student.number, newPw);
+    setPwMsg("✅ 密碼已更新！");
+    setNewPw(""); setConfirmPw("");
+    setTimeout(() => { setPwMsg(""); setShowChangePw(false); }, 1500);
+  };
+
+  return (
+    <div style={{ fontFamily: "'Noto Sans TC',sans-serif", minHeight: "100vh", background: "#f9f7f4" }}>
+      {/* Header */}
+      <header style={{ background: "linear-gradient(135deg,#f97316,#fb923c)", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 12px #f9731633" }}>
+        <div>
+          <div style={{ color: "#fff", fontWeight: 800, fontSize: 18 }}>📚 班務作業系統</div>
+          <div style={{ color: "#fed7aa", fontSize: 13 }}>{student.number} 號 {student.name} 的學習進度</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowChangePw(!showChangePw)} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>🔑 改密碼</button>
+          <button onClick={onLogout} style={{ background: "#fff", color: "#f97316", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>登出</button>
+        </div>
+      </header>
+
+      {/* Change password panel */}
+      {showChangePw && (
+        <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", padding: "16px 24px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密碼（至少4位）" style={{ ...inp, width: 160 }} />
+          <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="確認新密碼" style={{ ...inp, width: 160 }} />
+          <button onClick={handleChangePw} style={btnOrange}>確認更改</button>
+          {pwMsg && <span style={{ color: pwMsg.startsWith("✅") ? "#4ade80" : "#ef4444", fontWeight: 700 }}>{pwMsg}</span>}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <nav style={{ display: "flex", background: "#fff", borderBottom: "2px solid #fed7aa", paddingLeft: 16 }}>
+        {PARENT_TABS.map((t, i) => (
+          <button key={i} onClick={() => setTab(i)} style={{
+            padding: "12px 24px", border: "none", background: "none", cursor: "pointer",
+            fontWeight: tab === i ? 800 : 500, fontSize: 15,
+            color: tab === i ? "#f97316" : "#6b7280",
+            borderBottom: tab === i ? "3px solid #f97316" : "3px solid transparent",
+            transition: "all .2s"
+          }}>{t}</button>
+        ))}
+      </nav>
+
+      <main style={{ padding: "24px", maxWidth: 760, margin: "0 auto" }}>
+        {tab === 0 && <ParentProgressView student={student} assignments={assignments} progress={progress} getStatus={getStatus} />}
+        {tab === 1 && <ParentEnglishView student={student} engProgress={engProgress} />}
+      </main>
+    </div>
+  );
+}
+
+function ParentProgressView({ student, assignments, progress, getStatus }) {
+  return (
+    <div>
+      <h2 style={h2}>📋 每日進度</h2>
+      {assignments.length === 0 && <div style={{ color: "#9ca3af", textAlign: "center", padding: 40 }}>尚無作業</div>}
+      {assignments.map(a => {
+        const st = getStatus(a.id, student.number);
+        return (
+          <div key={a.id} style={{ ...card, borderLeft: `4px solid ${STATUS_COLOR[st]}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "#9ca3af", background: "#f3f4f6", borderRadius: 8, padding: "2px 8px" }}>{a.category}</span>
+              <span style={{ fontWeight: 700, fontSize: 16, color: "#1f2937", flex: 1 }}>{a.name}</span>
+              <span style={{ fontSize: 13, color: "#9ca3af" }}>{a.date}</span>
+              <span style={{ background: STATUS_COLOR[st], borderRadius: 8, padding: "4px 14px", fontWeight: 700, fontSize: 14, color: st === 0 ? "#9ca3af" : "#1f2937" }}>
+                {STATUS[st]}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ParentEnglishView({ student, engProgress }) {
+  const [section, setSection] = useState(0);
+  const units = section === 0 ? [1,2,3,4,5] : [6,7,8,9,10];
+  const parts = [1,2,3,4];
+  const cols = units.flatMap(u => parts.map(p => ({ unit: u, part: p })));
+
+  return (
+    <div>
+      <h2 style={h2}>📖 英文作業</h2>
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+        {["U1～5","U6～10"].map((label,i) => (
+          <button key={i} onClick={() => setSection(i)}
+            style={{ ...chipBtn, background: section === i ? "#f97316" : "#f3f4f6", color: section === i ? "#fff" : "#374151", padding: "10px 28px", fontSize: 15, fontWeight: 700 }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ ...card, overflowX: "auto", padding: 0 }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 400 }}>
+          <thead>
+            <tr>
+              <th rowSpan={2} style={thStyle({ minWidth: 80, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Part</th>
+              {units.map(u => (
+                <th key={u} colSpan={4} style={thStyle({ background: "#f97316", color: "#fff", fontSize: 13, borderLeft: "2px solid #ea580c" })}>Unit {u}</th>
+              ))}
+            </tr>
+            <tr>
+              {cols.map(({ unit, part }, i) => (
+                <th key={i} style={thStyle({ background: "#fff7ed", color: "#ea580c", fontSize: 11, borderLeft: part === 1 ? "2px solid #fed7aa" : "1px solid #fde8cc" })}>P{part}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={{ padding: "6px 12px", fontWeight: 700, fontSize: 13, borderRight: "2px solid #fed7aa", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap", color: "#374151" }}>
+                <span style={{ color: "#f97316", marginRight: 6 }}>{student.number}</span>{student.name}
+              </td>
+              {cols.map(({ unit, part }, i) => {
+                const key = `U${unit}-P${part}-${student.number}`;
+                const done = !!engProgress[key];
+                return (
+                  <td key={i} style={{ padding: 4, borderBottom: "1px solid #f3f4f6", borderLeft: part === 1 ? "2px solid #fed7aa" : "1px solid #f3f4f6", textAlign: "center" }}>
+                    <div style={{ width: "100%", minWidth: 40, padding: "5px 2px", borderRadius: 6, background: done ? "#4ade80" : "#f3f4f6", color: done ? "#14532d" : "#d1d5db", fontSize: 11, fontWeight: 700, lineHeight: 1.3, textAlign: "center" }}>
+                      {done ? "✓" : "－"}
+                      {done && <div style={{ fontSize: 8, fontWeight: 400, color: "#166534", marginTop: 1 }}>{engProgress[key]}</div>}
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState(0);
@@ -56,10 +257,12 @@ export default function App() {
   const [progress, setProgress] = useState({});
   const [engProgress, setEngProgress] = useState({});
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [todos, setTodos] = useState([]); // [{id, title, student_number, done}]
+  const [todos, setTodos] = useState([]);
   const [saving, setSaving] = useState(false);
   const [loadMsg, setLoadMsg] = useState("載入中…");
   const [loaded, setLoaded] = useState(false);
+  const [role, setRole] = useState(null); // null=登入畫面, "teacher", "parent"
+  const [currentStudent, setCurrentStudent] = useState(null);
 
   // ── Load from Google Sheets ────────────────────────────────────────────────
   useEffect(() => {
@@ -69,8 +272,12 @@ export default function App() {
         const data = await gsLoad();
         console.log("✅ 載入成功：", data);
 
-        // students
-        const s = (data.students || []).map(s => ({ number: Number(s.number), name: s.name }));
+        // students (include password)
+        const s = (data.students || []).map(s => ({
+          number: Number(s.number),
+          name: s.name,
+          password: s.password ? String(s.password) : String(Number(s.number)),
+        }));
         console.log("學生：", s);
         setStudents(s);
 
@@ -154,10 +361,33 @@ export default function App() {
     }
   };
 
+  const handleTeacherLogin = () => setRole("teacher");
+  const handleParentLogin = (student) => { setRole("parent"); setCurrentStudent(student); };
+  const handleLogout = () => { setRole(null); setCurrentStudent(null); };
+  const handlePasswordChange = (studentNumber, newPw) => {
+    setStudents(prev => prev.map(s => s.number === studentNumber ? { ...s, password: newPw } : s));
+  };
+
   if (!loaded) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "sans-serif", color: "#f97316", fontSize: 20 }}>
       {loadMsg}
     </div>
+  );
+
+  if (role === null) return (
+    <LoginScreen students={students} onTeacherLogin={handleTeacherLogin} onParentLogin={handleParentLogin} />
+  );
+
+  if (role === "parent") return (
+    <ParentView
+      student={currentStudent}
+      students={students}
+      assignments={assignments}
+      progress={progress}
+      engProgress={engProgress}
+      onLogout={handleLogout}
+      onPasswordChange={handlePasswordChange}
+    />
   );
 
   return (
@@ -165,9 +395,12 @@ export default function App() {
       {/* Header */}
       <header style={{ background: "linear-gradient(135deg,#f97316,#fb923c)", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 12px #f9731633" }}>
         <div style={{ color: "#fff", fontWeight: 800, fontSize: 22, letterSpacing: 2 }}>📚 班務作業系統</div>
-        <button onClick={save} disabled={saving} style={{ background: saving ? "#ccc" : "#fff", color: "#f97316", border: "none", borderRadius: 8, padding: "8px 20px", fontWeight: 700, cursor: "pointer", fontSize: 15 }}>
-          {saving ? "儲存中…" : "💾 儲存"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={save} disabled={saving} style={{ background: saving ? "#ccc" : "#fff", color: "#f97316", border: "none", borderRadius: 8, padding: "8px 20px", fontWeight: 700, cursor: "pointer", fontSize: 15 }}>
+            {saving ? "儲存中…" : "💾 儲存"}
+          </button>
+          <button onClick={handleLogout} style={{ background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 14 }}>登出</button>
+        </div>
       </header>
 
       {/* Tabs */}
