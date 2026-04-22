@@ -10,24 +10,33 @@ async function gsLoad() {
   return data;
 }
 
-async function gsSave(payload) {
-  const sheets = [
-    { sheet: "students",         data: payload.students },
-    { sheet: "assignments",      data: payload.assignments },
-    { sheet: "progress",         data: payload.progress },
-    { sheet: "english_progress", data: payload.english_progress },
-    { sheet: "categories",       data: payload.categories },
-    { sheet: "todos",            data: payload.todos || [] },
-  ];
-  for (const item of sheets) {
-    const encoded = encodeURIComponent(JSON.stringify(item.data));
-    const url = `${GAS_URL}?action=save&sheet=${item.sheet}&data=${encoded}`;
-    try {
-      await fetch(url, { mode: "no-cors" });
-    } catch (_) {}
-    // 等待 Apps Script 處理
-    await new Promise(r => setTimeout(r, 1500));
+async function saveSheet(sheetName, data) {
+  const BATCH = 20; // 每批最多20筆
+  if (!data || data.length === 0) {
+    // 清空分頁
+    const url = `${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}`;
+    try { await fetch(url, { mode: "no-cors" }); } catch (_) {}
+    await new Promise(r => setTimeout(r, 2000));
+    return;
   }
+  // 第一批用 action=save（覆蓋），後續批次用 action=append（附加）
+  for (let i = 0; i < data.length; i += BATCH) {
+    const batch = data.slice(i, i + BATCH);
+    const action = i === 0 ? "save" : "append";
+    const encoded = encodeURIComponent(JSON.stringify(batch));
+    const url = `${GAS_URL}?action=${action}&sheet=${sheetName}&data=${encoded}`;
+    try { await fetch(url, { mode: "no-cors" }); } catch (_) {}
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
+async function gsSave(payload) {
+  await saveSheet("students",         payload.students);
+  await saveSheet("assignments",      payload.assignments);
+  await saveSheet("progress",         payload.progress);
+  await saveSheet("english_progress", payload.english_progress);
+  await saveSheet("categories",       payload.categories);
+  await saveSheet("todos",            payload.todos || []);
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
