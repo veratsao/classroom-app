@@ -10,26 +10,6 @@ async function gsLoad() {
   return data;
 }
 
-function formSubmit(sheetName, data) {
-  return new Promise((resolve) => {
-    const encoded = encodeURIComponent(JSON.stringify(data));
-    const url = `${GAS_URL}?action=save&sheet=${sheetName}&data=${encoded}`;
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none";
-    document.body.appendChild(iframe);
-    const timer = setTimeout(() => {
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      resolve();
-    }, 10000);
-    iframe.onload = () => {
-      clearTimeout(timer);
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      resolve();
-    };
-    iframe.src = url;
-  });
-}
-
 async function gsSave(payload) {
   const sheets = [
     { sheet: "students",         data: payload.students },
@@ -40,7 +20,13 @@ async function gsSave(payload) {
     { sheet: "todos",            data: payload.todos || [] },
   ];
   for (const item of sheets) {
-    await formSubmit(item.sheet, item.data);
+    const encoded = encodeURIComponent(JSON.stringify(item.data));
+    const url = `${GAS_URL}?action=save&sheet=${item.sheet}&data=${encoded}`;
+    try {
+      await fetch(url, { mode: "no-cors" });
+    } catch (_) {}
+    // 等待 Apps Script 處理
+    await new Promise(r => setTimeout(r, 1500));
   }
 }
 
