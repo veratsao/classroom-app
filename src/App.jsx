@@ -11,23 +11,12 @@ async function gsLoad() {
 }
 
 async function saveSheet(sheetName, data) {
-  const BATCH = 20; // 每批最多20筆
-  if (!data || data.length === 0) {
-    // 清空分頁
-    const url = `${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}`;
-    try { await fetch(url, { mode: "no-cors" }); } catch (_) {}
-    await new Promise(r => setTimeout(r, 2000));
-    return;
-  }
-  // 第一批用 action=save（覆蓋），後續批次用 action=append（附加）
-  for (let i = 0; i < data.length; i += BATCH) {
-    const batch = data.slice(i, i + BATCH);
-    const action = i === 0 ? "save" : "append";
-    const encoded = encodeURIComponent(JSON.stringify(batch));
-    const url = `${GAS_URL}?action=${action}&sheet=${sheetName}&data=${encoded}`;
-    try { await fetch(url, { mode: "no-cors" }); } catch (_) {}
-    await new Promise(r => setTimeout(r, 2000));
-  }
+  const encoded = encodeURIComponent(JSON.stringify(data || []));
+  const url = `${GAS_URL}?action=save&sheet=${sheetName}&data=${encoded}`;
+  // 開新分頁觸發儲存（不受 CORS 限制）
+  const w = window.open(url, "_blank");
+  await new Promise(r => setTimeout(r, 3000));
+  if (w) w.close();
 }
 
 async function gsSave(payload) {
@@ -105,15 +94,14 @@ function LoginScreen({ students, onTeacherLogin, onParentLogin }) {
 // ═══════════════════════════════════════════════════════════════
 // PARENT VIEW
 // ═══════════════════════════════════════════════════════════════
-function ParentView({ student, students, assignments, progress, engProgress, onLogout, onPasswordChange }) {
-  const [tab, setTab] = useState(0);
+function ParentView({ student, students, assignments, progress, engProgress, todos, onLogout, onPasswordChange }) {
   const [showChangePw, setShowChangePw] = useState(false);
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg, setPwMsg] = useState("");
+  const [engSection, setEngSection] = useState(0);
 
   const getStatus = (aid, sn) => progress[aid]?.[sn] ?? 0;
-  const PARENT_TABS = ["每日進度", "英文作業"];
 
   const handleChangePw = () => {
     if (newPw.length < 4) { setPwMsg("密碼至少需要4位"); return; }
@@ -123,6 +111,11 @@ function ParentView({ student, students, assignments, progress, engProgress, onL
     setNewPw(""); setConfirmPw("");
     setTimeout(() => { setPwMsg(""); setShowChangePw(false); }, 1500);
   };
+
+  const unfinishedAssign = assignments.filter(a => getStatus(a.id, student.number) < 2);
+  const pendingTodos = (todos || []).filter(t => t.student_number === student.number && !t.done);
+  const units = engSection === 0 ? [1,2,3,4,5] : [6,7,8,9,10];
+  const parts = [1,2,3,4];
 
   return (
     <div style={{ fontFamily: "'Noto Sans TC',sans-serif", minHeight: "100vh", background: "#f9f7f4" }}>
@@ -138,7 +131,7 @@ function ParentView({ student, students, assignments, progress, engProgress, onL
         </div>
       </header>
 
-      {/* Change password panel */}
+      {/* Change password */}
       {showChangePw && (
         <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", padding: "16px 24px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密碼（至少4位）" style={{ ...inp, width: 160 }} />
@@ -148,107 +141,99 @@ function ParentView({ student, students, assignments, progress, engProgress, onL
         </div>
       )}
 
-      {/* Tabs */}
-      <nav style={{ display: "flex", background: "#fff", borderBottom: "2px solid #fed7aa", paddingLeft: 16 }}>
-        {PARENT_TABS.map((t, i) => (
-          <button key={i} onClick={() => setTab(i)} style={{
-            padding: "12px 24px", border: "none", background: "none", cursor: "pointer",
-            fontWeight: tab === i ? 800 : 500, fontSize: 15,
-            color: tab === i ? "#f97316" : "#6b7280",
-            borderBottom: tab === i ? "3px solid #f97316" : "3px solid transparent",
-            transition: "all .2s"
-          }}>{t}</button>
-        ))}
-      </nav>
+      <main style={{ padding: "20px", maxWidth: 760, margin: "0 auto" }}>
 
-      <main style={{ padding: "24px", maxWidth: 760, margin: "0 auto" }}>
-        {tab === 0 && <ParentProgressView student={student} assignments={assignments} progress={progress} getStatus={getStatus} />}
-        {tab === 1 && <ParentEnglishView student={student} engProgress={engProgress} />}
+        {/* ── 每日進度未完成 ── */}
+        <div style={card}>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "#f97316", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            📋 每日進度未完成
+            <span style={{ background: unfinishedAssign.length > 0 ? "#ef4444" : "#4ade80", color: "#fff", borderRadius: 10, padding: "1px 10px", fontSize: 13, fontWeight: 700 }}>
+              {unfinishedAssign.length} 項
+            </span>
+          </div>
+          {unfinishedAssign.length === 0
+            ? <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 全部完成！</div>
+            : unfinishedAssign.map(a => {
+                const st = getStatus(a.id, student.number);
+                return (
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #f3f4f6", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: "#9ca3af", background: "#f3f4f6", borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap" }}>{a.category}</span>
+                    <span style={{ fontWeight: 600, fontSize: 15, color: "#1f2937", flex: 1 }}>{a.name}</span>
+                    <span style={{ background: STATUS_COLOR[st], borderRadius: 8, padding: "3px 12px", fontWeight: 700, fontSize: 13, color: st === 0 ? "#9ca3af" : "#1f2937", whiteSpace: "nowrap" }}>
+                      {STATUS[st]}
+                    </span>
+                  </div>
+                );
+              })}
+        </div>
+
+        {/* ── 待辦事項 ── */}
+        <div style={card}>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "#f97316", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            📝 待辦事項
+            <span style={{ background: pendingTodos.length > 0 ? "#ef4444" : "#4ade80", color: "#fff", borderRadius: 10, padding: "1px 10px", fontSize: 13, fontWeight: 700 }}>
+              {pendingTodos.length} 項
+            </span>
+          </div>
+          {pendingTodos.length === 0
+            ? <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 沒有待辦事項！</div>
+            : pendingTodos.map(t => (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #f3f4f6" }}>
+                <span style={{ flex: 1, fontSize: 15, color: "#374151" }}>・{t.title}</span>
+              </div>
+            ))}
+        </div>
+
+        {/* ── 英文作業 ── */}
+        <div style={card}>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "#f97316", marginBottom: 14 }}>📖 英文作業</div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            {["U1～5","U6～10"].map((label,i) => (
+              <button key={i} onClick={() => setEngSection(i)}
+                style={{ ...chipBtn, background: engSection === i ? "#f97316" : "#f3f4f6", color: engSection === i ? "#fff" : "#374151", padding: "8px 20px", fontSize: 14, fontWeight: 700 }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr>
+                  <th style={thStyle({ minWidth: 50, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Unit</th>
+                  <th style={thStyle({ minWidth: 45, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Part</th>
+                  <th style={thStyle({ background: "#f97316", color: "#fff" })}>狀態</th>
+                </tr>
+              </thead>
+              <tbody>
+                {units.flatMap(u => parts.map((p, pi) => {
+                  const key = `U${u}-P${p}-${student.number}`;
+                  const done = !!engProgress[key];
+                  return (
+                    <tr key={`${u}-${p}`} style={{ background: pi % 2 === 0 ? "#fff" : "#fafafa" }}>
+                      {pi === 0 && (
+                        <td rowSpan={4} style={{ padding: "6px 10px", fontWeight: 800, fontSize: 14, color: "#f97316", borderRight: "2px solid #fed7aa", borderBottom: "2px solid #fed7aa", textAlign: "center", background: "#fff7ed", verticalAlign: "middle" }}>U{u}</td>
+                      )}
+                      <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: "#ea580c", borderRight: "2px solid #fed7aa", borderBottom: pi === 3 ? "2px solid #fed7aa" : "1px solid #f3f4f6", textAlign: "center", background: "#fff7ed" }}>P{p}</td>
+                      <td style={{ padding: "4px 10px", textAlign: "center", borderBottom: pi === 3 ? "2px solid #fed7aa" : "1px solid #f3f4f6" }}>
+                        <span style={{ background: done ? "#4ade80" : "#f3f4f6", color: done ? "#14532d" : "#9ca3af", borderRadius: 6, padding: "3px 14px", fontWeight: 700, fontSize: 13 }}>
+                          {done ? `✓ ${engProgress[key]}` : "未完成"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                }))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </main>
     </div>
   );
 }
 
-function ParentProgressView({ student, assignments, progress, getStatus }) {
-  return (
-    <div>
-      <h2 style={h2}>📋 每日進度</h2>
-      {assignments.length === 0 && <div style={{ color: "#9ca3af", textAlign: "center", padding: 40 }}>尚無作業</div>}
-      {assignments.map(a => {
-        const st = getStatus(a.id, student.number);
-        return (
-          <div key={a.id} style={{ ...card, borderLeft: `4px solid ${STATUS_COLOR[st]}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, color: "#9ca3af", background: "#f3f4f6", borderRadius: 8, padding: "2px 8px" }}>{a.category}</span>
-              <span style={{ fontWeight: 700, fontSize: 16, color: "#1f2937", flex: 1 }}>{a.name}</span>
-              <span style={{ fontSize: 13, color: "#9ca3af" }}>{a.date}</span>
-              <span style={{ background: STATUS_COLOR[st], borderRadius: 8, padding: "4px 14px", fontWeight: 700, fontSize: 14, color: st === 0 ? "#9ca3af" : "#1f2937" }}>
-                {STATUS[st]}
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
-function ParentEnglishView({ student, engProgress }) {
-  const [section, setSection] = useState(0);
-  const units = section === 0 ? [1,2,3,4,5] : [6,7,8,9,10];
-  const parts = [1,2,3,4];
-  const cols = units.flatMap(u => parts.map(p => ({ unit: u, part: p })));
 
-  return (
-    <div>
-      <h2 style={h2}>📖 英文作業</h2>
-      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        {["U1～5","U6～10"].map((label,i) => (
-          <button key={i} onClick={() => setSection(i)}
-            style={{ ...chipBtn, background: section === i ? "#f97316" : "#f3f4f6", color: section === i ? "#fff" : "#374151", padding: "10px 28px", fontSize: 15, fontWeight: 700 }}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div style={{ ...card, overflowX: "auto", padding: 0 }}>
-        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 400 }}>
-          <thead>
-            <tr>
-              <th rowSpan={2} style={thStyle({ minWidth: 80, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Part</th>
-              {units.map(u => (
-                <th key={u} colSpan={4} style={thStyle({ background: "#f97316", color: "#fff", fontSize: 13, borderLeft: "2px solid #ea580c" })}>Unit {u}</th>
-              ))}
-            </tr>
-            <tr>
-              {cols.map(({ unit, part }, i) => (
-                <th key={i} style={thStyle({ background: "#fff7ed", color: "#ea580c", fontSize: 11, borderLeft: part === 1 ? "2px solid #fed7aa" : "1px solid #fde8cc" })}>P{part}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style={{ padding: "6px 12px", fontWeight: 700, fontSize: 13, borderRight: "2px solid #fed7aa", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap", color: "#374151" }}>
-                <span style={{ color: "#f97316", marginRight: 6 }}>{student.number}</span>{student.name}
-              </td>
-              {cols.map(({ unit, part }, i) => {
-                const key = `U${unit}-P${part}-${student.number}`;
-                const done = !!engProgress[key];
-                return (
-                  <td key={i} style={{ padding: 4, borderBottom: "1px solid #f3f4f6", borderLeft: part === 1 ? "2px solid #fed7aa" : "1px solid #f3f4f6", textAlign: "center" }}>
-                    <div style={{ width: "100%", minWidth: 40, padding: "5px 2px", borderRadius: 6, background: done ? "#4ade80" : "#f3f4f6", color: done ? "#14532d" : "#d1d5db", fontSize: 11, fontWeight: 700, lineHeight: 1.3, textAlign: "center" }}>
-                      {done ? "✓" : "－"}
-                      {done && <div style={{ fontSize: 8, fontWeight: 400, color: "#166534", marginTop: 1 }}>{engProgress[key]}</div>}
-                    </div>
-                  </td>
-                );
-              })}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const [tab, setTab] = useState(0);
@@ -385,6 +370,7 @@ export default function App() {
       assignments={assignments}
       progress={progress}
       engProgress={engProgress}
+      todos={todos}
       onLogout={handleLogout}
       onPasswordChange={handlePasswordChange}
     />
@@ -418,7 +404,7 @@ export default function App() {
 
       <main style={{ padding: "24px", maxWidth: 960, margin: "0 auto" }}>
         {tab === 0 && <StudentTab students={students} setStudents={setStudents} />}
-        {tab === 1 && <DailyTab students={students} assignments={assignments} setAssignments={setAssignments} progress={progress} setProgress={setProgress} categories={categories} setCategories={setCategories} />}
+        {tab === 1 && <DailyTab students={students} assignments={assignments} setAssignments={setAssignments} progress={progress} setProgress={setProgress} categories={categories} setCategories={setCategories} todos={todos} setTodos={setTodos} />}
         {tab === 2 && <EnglishTab students={students} engProgress={engProgress} setEngProgress={setEngProgress} />}
         {tab === 3 && <TodoTab students={students} todos={todos} setTodos={setTodos} />}
         {tab === 4 && <PrintTab students={students} assignments={assignments} progress={progress} engProgress={engProgress} categories={categories} />}
@@ -504,7 +490,7 @@ function StudentTab({ students, setStudents }) {
 // ═══════════════════════════════════════════════════════════════
 // TAB 2: 每日進度
 // ═══════════════════════════════════════════════════════════════
-function DailyTab({ students, assignments, setAssignments, progress, setProgress, categories, setCategories }) {
+function DailyTab({ students, assignments, setAssignments, progress, setProgress, categories, setCategories, todos, setTodos }) {
   const [newAssign, setNewAssign] = useState("");
   const [newAssignCat, setNewAssignCat] = useState("");
   const [editId, setEditId] = useState(null);
@@ -645,9 +631,11 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
             <div style={{ fontWeight: 700, color: "#f97316", marginBottom: 8 }}>
               {students.find(s => s.number === filter)?.name} 未完成項目（{catFilter === "全部" ? "全部分類" : catFilter}）：
             </div>
-            {unfinished.length === 0
-              ? <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 全部完成！</div>
-              : unfinished.map(a => {
+            {/* 作業未完成 */}
+            {unfinished.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700, marginBottom: 4 }}>📋 作業</div>
+                {unfinished.map(a => {
                   const st = getStatus(a.id, filter);
                   return (
                     <div key={a.id} style={{ padding: "6px 0", color: "#374151", display: "flex", gap: 8, alignItems: "center", borderBottom: "1px solid #f3f4f6" }}>
@@ -660,6 +648,29 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {/* 待辦未完成 */}
+            {(() => {
+              const pendingTodos = (todos || []).filter(t => t.student_number === filter && !t.done);
+              return pendingTodos.length > 0 ? (
+                <div>
+                  <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700, marginBottom: 4 }}>📝 待辦事項</div>
+                  {pendingTodos.map(t => (
+                    <div key={t.id} style={{ padding: "6px 0", color: "#374151", display: "flex", gap: 8, alignItems: "center", borderBottom: "1px solid #f3f4f6" }}>
+                      <span style={{ flex: 1, fontSize: 14 }}>・{t.title}</span>
+                      <button onClick={() => setTodos(prev => prev.map(x => x.id === t.id ? { ...x, done: true } : x))}
+                        style={{ border: "none", borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, background: "#e5e7eb", color: "#9ca3af" }}>
+                        標記完成
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+            {unfinished.length === 0 && (todos || []).filter(t => t.student_number === filter && !t.done).length === 0 && (
+              <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 全部完成！</div>
+            )}
           </div>
         )}
       </div>
@@ -727,9 +738,6 @@ function EnglishTab({ students, engProgress, setEngProgress }) {
     });
   };
 
-  // Column headers: each unit has 4 parts
-  const cols = units.flatMap(u => parts.map(p => ({ unit: u, part: p })));
-
   return (
     <div>
       <h2 style={h2}>📖 英文作業</h2>
@@ -745,47 +753,40 @@ function EnglishTab({ students, engProgress, setEngProgress }) {
       <div style={{ ...card, overflowX: "auto", padding: 0 }}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 640 }}>
           <thead>
-            {/* Unit row */}
+            {/* 第一行：Unit */}
             <tr>
-              <th rowSpan={2} style={thStyle({ minWidth: 90, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>姓名</th>
-              {units.map(u => (
-                <th key={u} colSpan={4} style={thStyle({ background: "#f97316", color: "#fff", fontSize: 14, borderLeft: "2px solid #ea580c" })}>
-                  Unit {u}
-                </th>
-              ))}
-            </tr>
-            {/* Part row */}
-            <tr>
-              {cols.map(({ unit, part }, i) => (
-                <th key={i} style={thStyle({ background: "#fff7ed", color: "#ea580c", fontSize: 12, fontWeight: 700, borderLeft: part === 1 ? "2px solid #fed7aa" : "1px solid #fde8cc" })}>
-                  P{part}
+              <th rowSpan={2} style={thStyle({ minWidth: 60, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Unit</th>
+              <th rowSpan={2} style={thStyle({ minWidth: 50, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Part</th>
+              {students.map(s => (
+                <th key={s.number} style={thStyle({ background: "#f97316", color: "#fff", fontSize: 12, minWidth: 52 })}>
+                  <div style={{ fontSize: 10 }}>{s.number}</div>
+                  <div>{s.name}</div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {students.length === 0 && (
-              <tr><td colSpan={cols.length + 1} style={{ textAlign: "center", padding: 32, color: "#9ca3af" }}>尚無學生</td></tr>
+              <tr><td colSpan={students.length + 2} style={{ textAlign: "center", padding: 32, color: "#9ca3af" }}>尚無學生</td></tr>
             )}
-            {students.map((s, si) => (
-              <tr key={s.number} style={{ background: si % 2 === 0 ? "#fff" : "#fafafa" }}>
-                <td style={{ padding: "6px 12px", fontWeight: 700, fontSize: 13, borderRight: "2px solid #fed7aa", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap", color: "#374151" }}>
-                  <span style={{ color: "#f97316", marginRight: 6 }}>{s.number}</span>{s.name}
+            {units.flatMap(u => parts.map((p, pi) => (
+              <tr key={`${u}-${p}`} style={{ background: pi % 2 === 0 ? "#fff" : "#fafafa" }}>
+                {pi === 0 && (
+                  <td rowSpan={4} style={{ padding: "6px 10px", fontWeight: 800, fontSize: 14, color: "#f97316", borderRight: "2px solid #fed7aa", borderBottom: "2px solid #fed7aa", textAlign: "center", background: "#fff7ed", verticalAlign: "middle" }}>
+                    U{u}
+                  </td>
+                )}
+                <td style={{ padding: "4px 10px", fontWeight: 700, fontSize: 12, color: "#ea580c", borderRight: "2px solid #fed7aa", borderBottom: pi === 3 ? "2px solid #fed7aa" : "1px solid #f3f4f6", textAlign: "center", background: "#fff7ed", whiteSpace: "nowrap" }}>
+                  P{p}
                 </td>
-                {cols.map(({ unit, part }, i) => {
-                  const key = `U${unit}-P${part}-${s.number}`;
+                {students.map(s => {
+                  const key = `U${u}-P${p}-${s.number}`;
                   const done = !!engProgress[key];
                   return (
-                    <td key={i} style={{ padding: 3, borderBottom: "1px solid #f3f4f6", borderLeft: part === 1 ? "2px solid #fed7aa" : "1px solid #f3f4f6", textAlign: "center" }}>
-                      <button
-                        onClick={() => togglePart(unit, part, s.number)}
+                    <td key={s.number} style={{ padding: 3, borderBottom: pi === 3 ? "2px solid #fed7aa" : "1px solid #f3f4f6", borderLeft: "1px solid #f3f4f6", textAlign: "center" }}>
+                      <button onClick={() => togglePart(u, p, s.number)}
                         title={done ? `完成於 ${engProgress[key]}` : "點擊標記完成"}
-                        style={{
-                          width: "100%", minWidth: 44, padding: "5px 2px", border: "none", borderRadius: 6, cursor: "pointer",
-                          background: done ? "#4ade80" : "#f3f4f6",
-                          color: done ? "#14532d" : "#d1d5db",
-                          fontSize: 11, fontWeight: 700, transition: "all .15s", lineHeight: 1.3
-                        }}>
+                        style={{ width: "100%", minWidth: 44, padding: "5px 2px", border: "none", borderRadius: 6, cursor: "pointer", background: done ? "#4ade80" : "#f3f4f6", color: done ? "#14532d" : "#d1d5db", fontSize: 11, fontWeight: 700, transition: "all .15s", lineHeight: 1.3 }}>
                         {done ? "✓" : "－"}
                         {done && <div style={{ fontSize: 8, fontWeight: 400, color: "#166534", marginTop: 1 }}>{engProgress[key]}</div>}
                       </button>
@@ -793,15 +794,14 @@ function EnglishTab({ students, engProgress, setEngProgress }) {
                   );
                 })}
               </tr>
-            ))}
+            )))}
           </tbody>
         </table>
       </div>
 
-      {/* Legend */}
       <div style={{ display: "flex", gap: 16, marginTop: 8, alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280" }}>
-          <div style={{ width: 20, height: 20, background: "#4ade80", borderRadius: 4 }} /> 已完成（顯示日期）
+          <div style={{ width: 20, height: 20, background: "#4ade80", borderRadius: 4 }} /> 已完成
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280" }}>
           <div style={{ width: 20, height: 20, background: "#f3f4f6", borderRadius: 4 }} /> 未完成
