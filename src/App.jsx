@@ -628,23 +628,37 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
         </div>
         {filter !== null && (
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 700, color: "#f97316", marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, color: "#f97316", marginBottom: 12, fontSize: 15 }}>
               {students.find(s => s.number === filter)?.name} 未完成項目（{catFilter === "全部" ? "全部分類" : catFilter}）：
             </div>
             {/* 作業未完成 */}
             {unfinished.length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700, marginBottom: 4 }}>📋 作業</div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>📋 作業</div>
                 {unfinished.map(a => {
                   const st = getStatus(a.id, filter);
                   return (
-                    <div key={a.id} style={{ padding: "6px 0", color: "#374151", display: "flex", gap: 8, alignItems: "center", borderBottom: "1px solid #f3f4f6" }}>
-                      <span style={{ background: catColor(a.category) + "22", color: catColor(a.category), borderRadius: 10, padding: "1px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{a.category}</span>
-                      <span style={{ flex: 1, fontSize: 14 }}>・{a.name}</span>
-                      <button onClick={() => cycleStatus(a.id, filter)}
-                        style={{ border: "none", borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, background: STATUS_COLOR[st], color: st === 0 ? "#9ca3af" : "#1f2937", transition: "all .15s", whiteSpace: "nowrap" }}>
-                        {STATUS[st]} →{STATUS[(st + 1) % 3]}
-                      </button>
+                    <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", marginBottom: 8, background: "#f9f7f4", borderRadius: 10, border: "1px solid #f3f4f6" }}>
+                      <span style={{ background: catColor(a.category) + "22", color: catColor(a.category), borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{a.category}</span>
+                      <span style={{ flex: 1, fontSize: 16, fontWeight: 600, color: "#1f2937" }}>{a.name}</span>
+                      {/* 三個狀態直接點選 */}
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        {STATUS.map((label, i) => (
+                          <button key={i} onClick={() => {
+                            setProgress(prev => ({ ...prev, [a.id]: { ...prev[a.id], [filter]: i } }));
+                          }} style={{
+                            border: "2px solid",
+                            borderColor: st === i ? ["#9ca3af","#f97316","#4ade80"][i] : "#e5e7eb",
+                            borderRadius: 8, padding: "6px 14px", cursor: "pointer",
+                            fontWeight: 700, fontSize: 14,
+                            background: st === i ? STATUS_COLOR[i] : "#fff",
+                            color: st === i ? (i === 0 ? "#6b7280" : "#1f2937") : "#9ca3af",
+                            transition: "all .15s",
+                          }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   );
                 })}
@@ -655,13 +669,13 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
               const pendingTodos = (todos || []).filter(t => t.student_number === filter && !t.done);
               return pendingTodos.length > 0 ? (
                 <div>
-                  <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700, marginBottom: 4 }}>📝 待辦事項</div>
+                  <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>📝 待辦事項</div>
                   {pendingTodos.map(t => (
-                    <div key={t.id} style={{ padding: "6px 0", color: "#374151", display: "flex", gap: 8, alignItems: "center", borderBottom: "1px solid #f3f4f6" }}>
-                      <span style={{ flex: 1, fontSize: 14 }}>・{t.title}</span>
+                    <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", marginBottom: 8, background: "#f9f7f4", borderRadius: 10, border: "1px solid #f3f4f6" }}>
+                      <span style={{ flex: 1, fontSize: 16, fontWeight: 600, color: "#374151" }}>・{t.title}</span>
                       <button onClick={() => setTodos(prev => prev.map(x => x.id === t.id ? { ...x, done: true } : x))}
-                        style={{ border: "none", borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, background: "#e5e7eb", color: "#9ca3af" }}>
-                        標記完成
+                        style={{ border: "2px solid #4ade80", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 14, background: "#fff", color: "#4ade80", transition: "all .15s" }}>
+                        完成
                       </button>
                     </div>
                   ))}
@@ -669,7 +683,7 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
               ) : null;
             })()}
             {unfinished.length === 0 && (todos || []).filter(t => t.student_number === filter && !t.done).length === 0 && (
-              <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 全部完成！</div>
+              <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 16, padding: "12px 0" }}>✅ 全部完成！</div>
             )}
           </div>
         )}
