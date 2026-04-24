@@ -11,21 +11,29 @@ async function gsLoad() {
 }
 
 async function saveSheet(sheetName, data) {
-  const encoded = encodeURIComponent(JSON.stringify(data || []));
-  const url = `${GAS_URL}?action=save&sheet=${sheetName}&data=${encoded}`;
-  // 開新分頁觸發儲存（不受 CORS 限制）
-  const w = window.open(url, "_blank");
-  await new Promise(r => setTimeout(r, 3000));
-  if (w) w.close();
+  const BATCH_SIZE = 30;
+  const arr = data || [];
+
+  if (arr.length === 0) {
+    await fetch(`${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}`);
+    return;
+  }
+
+  for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+    const batch = arr.slice(i, i + BATCH_SIZE);
+    const action = i === 0 ? "save" : "append";
+    const encoded = encodeURIComponent(JSON.stringify(batch));
+    await fetch(`${GAS_URL}?action=${action}&sheet=${sheetName}&data=${encoded}`);
+  }
 }
 
 async function gsSave(payload) {
   await saveSheet("students",         payload.students);
   await saveSheet("assignments",      payload.assignments);
-  await saveSheet("progress",         payload.progress);
-  await saveSheet("english_progress", payload.english_progress);
   await saveSheet("categories",       payload.categories);
   await saveSheet("todos",            payload.todos || []);
+  await saveSheet("progress",         payload.progress);
+  await saveSheet("english_progress", payload.english_progress);
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
