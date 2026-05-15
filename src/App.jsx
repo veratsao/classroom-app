@@ -102,7 +102,7 @@ function LoginScreen({ students, onTeacherLogin, onParentLogin }) {
 // ═══════════════════════════════════════════════════════════════
 // PARENT VIEW
 // ═══════════════════════════════════════════════════════════════
-function ParentView({ student, students, assignments, progress, engProgress, todos, onLogout, onPasswordChange }) {
+function ParentView({ student, students, assignments, progress, setProgress, engProgress, todos, onLogout, onPasswordChange }) {
   const [showChangePw, setShowChangePw] = useState(false);
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -125,9 +125,17 @@ function ParentView({ student, students, assignments, progress, engProgress, tod
   const units = engSection === 0 ? [1,2,3,4,5] : [6,7,8,9,10];
   const parts = [1,2,3,4];
 
+  // 依類別分組
+  const catGroups = unfinishedAssign.reduce((acc, a) => {
+    const cat = a.category || "其他";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(a);
+    return acc;
+  }, {});
+  const sortedCats = Object.keys(catGroups).sort((a, b) => a.localeCompare(b, "zh-TW"));
+
   return (
     <div style={{ fontFamily: "'Noto Sans TC',sans-serif", minHeight: "100vh", background: "#f9f7f4" }}>
-      {/* Header */}
       <header style={{ background: "linear-gradient(135deg,#f97316,#fb923c)", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", boxShadow: "0 2px 12px #f9731633" }}>
         <div>
           <div style={{ color: "#fff", fontWeight: 800, fontSize: 18 }}>📚 班務作業系統</div>
@@ -139,7 +147,6 @@ function ParentView({ student, students, assignments, progress, engProgress, tod
         </div>
       </header>
 
-      {/* Change password */}
       {showChangePw && (
         <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", padding: "16px 24px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="新密碼（至少4位）" style={{ ...inp, width: 160 }} />
@@ -151,7 +158,7 @@ function ParentView({ student, students, assignments, progress, engProgress, tod
 
       <main style={{ padding: "20px", maxWidth: 760, margin: "0 auto" }}>
 
-        {/* ── 每日進度未完成 ── */}
+        {/* ── 每日進度（依類別分組）── */}
         <div style={card}>
           <div style={{ fontWeight: 800, fontSize: 17, color: "#f97316", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
             📋 每日進度未完成
@@ -161,18 +168,31 @@ function ParentView({ student, students, assignments, progress, engProgress, tod
           </div>
           {unfinishedAssign.length === 0
             ? <div style={{ color: "#4ade80", fontWeight: 700 }}>✅ 全部完成！</div>
-            : unfinishedAssign.map(a => {
-                const st = getStatus(a.id, student.number);
-                return (
-                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #f3f4f6", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: "#9ca3af", background: "#f3f4f6", borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap" }}>{a.category}</span>
-                    <span style={{ fontWeight: 600, fontSize: 15, color: "#1f2937", flex: 1 }}>{a.name}</span>
-                    <span style={{ background: STATUS_COLOR[st], borderRadius: 8, padding: "3px 12px", fontWeight: 700, fontSize: 13, color: st === 0 ? "#9ca3af" : "#1f2937", whiteSpace: "nowrap" }}>
-                      {STATUS[st]}
-                    </span>
-                  </div>
-                );
-              })}
+            : sortedCats.map(cat => (
+              <div key={cat} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#f97316", background: "#fff7ed", borderRadius: 6, padding: "3px 10px", display: "inline-block", marginBottom: 8 }}>{cat}</div>
+                {catGroups[cat].map(a => {
+                  const st = getStatus(a.id, student.number);
+                  const isBookRecite = cat === "背書";
+                  return (
+                    <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #f3f4f6", flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 600, fontSize: 15, color: "#1f2937", flex: 1 }}>{a.name}</span>
+                      {isBookRecite ? (
+                        // 背書可以點完成
+                        <button onClick={() => setProgress(prev => ({ ...prev, [a.id]: { ...prev[a.id], [student.number]: 2 } }))}
+                          style={{ border: "2px solid #4ade80", borderRadius: 8, padding: "5px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, background: "#fff", color: "#4ade80" }}>
+                          ✓ 背完了
+                        </button>
+                      ) : (
+                        <span style={{ background: STATUS_COLOR[st], borderRadius: 8, padding: "3px 12px", fontWeight: 700, fontSize: 13, color: st === 0 ? "#9ca3af" : "#1f2937", whiteSpace: "nowrap" }}>
+                          {STATUS[st]}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
         </div>
 
         {/* ── 待辦事項 ── */}
@@ -239,6 +259,9 @@ function ParentView({ student, students, assignments, progress, engProgress, tod
     </div>
   );
 }
+
+
+
 
 
 
@@ -377,6 +400,7 @@ export default function App() {
       students={students}
       assignments={assignments}
       progress={progress}
+      setProgress={setProgress}
       engProgress={engProgress}
       todos={todos}
       onLogout={handleLogout}
@@ -1022,22 +1046,29 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
 
   // ── Build HTML string for each print type ────────────────────────────────
   const buildOverviewHTML = () => {
-    const header = `<tr><th>號</th><th>姓名</th>${filteredAssignments.map(a =>
-      `<th style="background:${catColor(a.category)}33;color:#1f2937">${a.category ? `<span style="font-size:9px;color:${catColor(a.category)}">[${a.category}]</span><br>` : ""}${a.name}</th>`
+    const sortedAssign = [...filteredAssignments].sort((a, b) =>
+      (a.category || "").localeCompare(b.category || "", "zh-TW")
+    );
+    const unfinishedStudents = students.filter(s => sortedAssign.some(a => getStatus(a.id, s.number) < 2));
+    const header = `<tr><th>類別</th><th>作業</th>${unfinishedStudents.map(s =>
+      `<th><div style="font-size:9px;color:#9ca3af">${s.number}</div>${s.name}</th>`
     ).join("")}</tr>`;
-    const rows = students.map(s =>
-      `<tr><td>${s.number}</td><td>${s.name}</td>${filteredAssignments.map(a => {
+    const rows = sortedAssign.map(a =>
+      `<tr><td style="background:${catColor(a.category)}22;color:${catColor(a.category)};font-size:10px;white-space:nowrap;font-weight:700">${a.category||""}</td><td style="text-align:left;font-weight:600">${a.name}</td>${unfinishedStudents.map(s => {
         const st = getStatus(a.id, s.number);
-        return `<td style="background:${["#e5e7eb","#fb923c","#4ade80"][st]}">${STATUS[st]}</td>`;
+        return `<td style="background:${["#e5e7eb","#fb923c","#fee2e2"][st]};font-weight:${st < 2 ? 700 : 400}">${STATUS[st]}</td>`;
       }).join("")}</tr>`
     ).join("");
-    return `<h3>進度總覽${catFilter !== "全部" ? ` — ${catFilter}` : ""} — ${today()}</h3><table><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+    if (unfinishedStudents.length === 0) return `<h3>進度總覽（未完成）— ${today()}</h3><p style="color:#4ade80;font-weight:700">✅ 全班完成！</p>`;
+    return `<h3>進度總覽（未完成）${catFilter !== "全部" ? ` — ${catFilter}` : ""} — ${today()}</h3><table><thead>${header}</thead><tbody>${rows}</tbody></table>`;
   };
 
   const buildDebtHTML = () => {
     const targets = selectedStudents.length ? students.filter(s => selectedStudents.includes(s.number)) : students;
     const slips = targets.map(s => {
-      const missing = filteredAssignments.filter(a => getStatus(a.id, s.number) < 2);
+      const missing = filteredAssignments
+        .filter(a => getStatus(a.id, s.number) < 2)
+        .sort((a, b) => (a.category || "").localeCompare(b.category || "", "zh-TW"));
       const rows = missing.length === 0
         ? `<tr><td colspan="3" style="color:#4ade80;text-align:center">✅ 全部完成</td></tr>`
         : missing.map(a => {
@@ -1105,36 +1136,49 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
   };
 
   // ── In-page preview (lightweight) ─────────────────────────────────────────
-  const PreviewOverview = () => (
-    <div style={{ overflowX: "auto" }}>
-      <h3 style={{ color: "#f97316", marginBottom: 10 }}>進度總覽{catFilter !== "全部" ? ` — ${catFilter}` : ""} — {today()}</h3>
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
-        <thead>
-          <tr>
-            <th style={pth}>號</th><th style={pth}>姓名</th>
-            {filteredAssignments.map(a => (
-              <th key={a.id} style={{ ...pth, background: catColor(a.category) + "33" }}>
-                <div style={{ fontSize: 9, color: catColor(a.category), fontWeight: 700 }}>{a.category}</div>
-                {a.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {students.map(s => (
-            <tr key={s.number}>
-              <td style={ptd}>{s.number}</td>
-              <td style={ptd}>{s.name}</td>
-              {filteredAssignments.map(a => {
-                const st = getStatus(a.id, s.number);
-                return <td key={a.id} style={{ ...ptd, background: STATUS_COLOR[st], fontSize: 11 }}>{STATUS[st]}</td>;
-              })}
+  const PreviewOverview = () => {
+    const sortedAssign = [...filteredAssignments].sort((a, b) =>
+      (a.category || "").localeCompare(b.category || "", "zh-TW")
+    );
+    const unfinishedStudents = students.filter(s => sortedAssign.some(a => getStatus(a.id, s.number) < 2));
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <h3 style={{ color: "#f97316", marginBottom: 10 }}>進度總覽（未完成）{catFilter !== "全部" ? ` — ${catFilter}` : ""} — {today()}</h3>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ ...pth, minWidth: 60 }}>類別</th>
+              <th style={{ ...pth, minWidth: 80 }}>作業</th>
+              {unfinishedStudents.map(s => (
+                <th key={s.number} style={{ ...pth, minWidth: 44 }}>
+                  <div style={{ fontSize: 9, color: "#9ca3af" }}>{s.number}</div>
+                  {s.name}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+          </thead>
+          <tbody>
+            {unfinishedStudents.length === 0
+              ? <tr><td colSpan={sortedAssign.length + 2} style={{ ...ptd, color: "#4ade80", textAlign: "center" }}>✅ 全班完成！</td></tr>
+              : sortedAssign.map(a => (
+                <tr key={a.id}>
+                  <td style={{ ...ptd, background: catColor(a.category) + "22", color: catColor(a.category), fontWeight: 700, fontSize: 10, whiteSpace: "nowrap" }}>{a.category}</td>
+                  <td style={{ ...ptd, textAlign: "left", fontWeight: 600 }}>{a.name}</td>
+                  {unfinishedStudents.map(s => {
+                    const st = getStatus(a.id, s.number);
+                    return (
+                      <td key={s.number} style={{ ...ptd, background: STATUS_COLOR[st], fontSize: 11, fontWeight: st < 2 ? 700 : 400, color: st === 0 ? "#9ca3af" : "#1f2937" }}>
+                        {STATUS[st]}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
 
   const PreviewDebt = () => {
     const targets = selectedStudents.length ? students.filter(s => selectedStudents.includes(s.number)) : students;
@@ -1143,12 +1187,14 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
         <h3 style={{ color: "#f97316", marginBottom: 10 }}>學生欠繳單 — {today()}</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           {targets.map(s => {
-            const missing = filteredAssignments.filter(a => getStatus(a.id, s.number) < 2);
+            const missing = filteredAssignments
+              .filter(a => getStatus(a.id, s.number) < 2)
+              .sort((a, b) => (a.category || "").localeCompare(b.category || "", "zh-TW"));
             return (
               <div key={s.number} style={{ border: "2px solid #f97316", borderRadius: 8, padding: 10 }}>
                 <div style={{ fontWeight: 700, borderBottom: "1px solid #fed7aa", paddingBottom: 4, marginBottom: 8, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>{s.number} 號 {s.name}</span>
-                  <span style={{ fontWeight: 400, fontSize: 11, color: "#f97316" }}>未完成進度：{missing.length} 項</span>
+                  <span style={{ fontWeight: 400, fontSize: 11, color: "#f97316" }}>未完成：{missing.length} 項</span>
                 </div>
                 <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
                   <thead><tr><th style={pth}>分類</th><th style={pth}>作業</th><th style={pth}>狀態</th></tr></thead>
