@@ -771,22 +771,51 @@ function DailyTab({ students, assignments, setAssignments, progress, setProgress
 // ═══════════════════════════════════════════════════════════════
 function EnglishTab({ students, engProgress, setEngProgress }) {
   const [section, setSection] = useState(0);
+  const [datePopup, setDatePopup] = useState({ key: null, value: "" });
   const units = section === 0 ? [1, 2, 3, 4, 5] : [6, 7, 8, 9, 10];
   const parts = [1, 2, 3, 4];
 
-  const togglePart = (unit, part, studentNum) => {
-    const key = `U${unit}-P${part}-${studentNum}`;
-    setEngProgress(prev => {
-      const n = { ...prev };
-      if (n[key]) delete n[key];
-      else n[key] = today();
-      return n;
-    });
+  const handleClick = (u, p, sn) => {
+    const key = `U${u}-P${p}-${sn}`;
+    if (engProgress[key]) {
+      setEngProgress(prev => { const n = { ...prev }; delete n[key]; return n; });
+    } else {
+      const now = new Date();
+      setDatePopup({ key, value: `${now.getMonth() + 1}/${now.getDate()}` });
+    }
+  };
+
+  const confirmDate = () => {
+    if (!datePopup.key || !datePopup.value.trim()) return;
+    setEngProgress(prev => ({ ...prev, [datePopup.key]: datePopup.value.trim() }));
+    setDatePopup({ key: null, value: "" });
   };
 
   return (
     <div>
       <h2 style={h2}>📖 英文作業</h2>
+
+      {/* 日期輸入 popup */}
+      {datePopup.key && (
+        <div onClick={() => setDatePopup({ key: null, value: "" })}
+          style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 16, padding: 28, width: 280, boxShadow: "0 8px 32px #0003" }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: "#f97316", marginBottom: 6 }}>✏️ 輸入完成日期</div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 16 }}>格式：月/日，例如 5/15</div>
+            <input autoFocus value={datePopup.value}
+              onChange={e => setDatePopup(prev => ({ ...prev, value: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && confirmDate()}
+              placeholder="例：5/15"
+              style={{ ...inp, width: "100%", fontSize: 18, textAlign: "center", marginBottom: 16 }} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={confirmDate} style={{ ...btnOrange, flex: 1, padding: "10px 0", fontSize: 15 }}>確認</button>
+              <button onClick={() => setDatePopup({ key: null, value: "" })} style={{ ...btnGray, flex: 1, padding: "10px 0", fontSize: 15 }}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
         {["U1～5", "U6～10"].map((label, i) => (
           <button key={i} onClick={() => setSection(i)}
@@ -799,7 +828,6 @@ function EnglishTab({ students, engProgress, setEngProgress }) {
       <div style={{ ...card, overflowX: "auto", padding: 0 }}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 640 }}>
           <thead>
-            {/* 第一行：Unit */}
             <tr>
               <th rowSpan={2} style={thStyle({ minWidth: 60, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Unit</th>
               <th rowSpan={2} style={thStyle({ minWidth: 50, borderRight: "2px solid #fed7aa", background: "#fff7ed" })}>Part</th>
@@ -830,8 +858,8 @@ function EnglishTab({ students, engProgress, setEngProgress }) {
                   const done = !!engProgress[key];
                   return (
                     <td key={s.number} style={{ padding: 3, borderBottom: pi === 3 ? "2px solid #fed7aa" : "1px solid #f3f4f6", borderLeft: "1px solid #f3f4f6", textAlign: "center" }}>
-                      <button onClick={() => togglePart(u, p, s.number)}
-                        title={done ? `完成於 ${engProgress[key]}` : "點擊標記完成"}
+                      <button onClick={() => handleClick(u, p, s.number)}
+                        title={done ? `完成於 ${engProgress[key]}（點擊取消）` : "點擊標記完成"}
                         style={{ width: "100%", minWidth: 44, padding: "5px 2px", border: "none", borderRadius: 6, cursor: "pointer", background: done ? "#4ade80" : "#f3f4f6", color: done ? "#14532d" : "#d1d5db", fontSize: 11, fontWeight: 700, transition: "all .15s", lineHeight: 1.3 }}>
                         {done ? "✓" : "－"}
                         {done && <div style={{ fontSize: 8, fontWeight: 400, color: "#166534", marginTop: 1 }}>{engProgress[key]}</div>}
@@ -847,7 +875,7 @@ function EnglishTab({ students, engProgress, setEngProgress }) {
 
       <div style={{ display: "flex", gap: 16, marginTop: 8, alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280" }}>
-          <div style={{ width: 20, height: 20, background: "#4ade80", borderRadius: 4 }} /> 已完成
+          <div style={{ width: 20, height: 20, background: "#4ade80", borderRadius: 4 }} /> 已完成（點擊取消）
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280" }}>
           <div style={{ width: 20, height: 20, background: "#f3f4f6", borderRadius: 4 }} /> 未完成
@@ -1070,14 +1098,14 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
         .filter(a => getStatus(a.id, s.number) < 2)
         .sort((a, b) => (a.category || "").localeCompare(b.category || "", "zh-TW"));
       const rows = missing.length === 0
-        ? `<tr><td colspan="3" style="color:#4ade80;text-align:center">✅ 全部完成</td></tr>`
+        ? `<tr><td colspan="3" style="color:#4ade80;text-align:center;font-size:13px">✅ 全部完成</td></tr>`
         : missing.map(a => {
             const st = getStatus(a.id, s.number);
             const isBookRecite = a.category === "背書";
             const align = isBookRecite ? "right" : "left";
-            return `<tr><td style="background:${catColor(a.category)}22;color:${catColor(a.category)};font-size:10px;white-space:nowrap;text-align:${align}">${a.category||""}</td><td style="text-align:${align}">${a.name}</td><td style="background:${["#e5e7eb","#fb923c","#4ade80"][st]}">${STATUS[st]}</td></tr>`;
+            return `<tr><td style="background:${catColor(a.category)}22;color:${catColor(a.category)};font-size:12px;font-weight:800;white-space:nowrap;text-align:${align};padding:5px 8px">${a.category||""}</td><td style="text-align:${align};font-size:13px;font-weight:700;padding:5px 8px">${a.name}</td><td style="background:${["#e5e7eb","#fb923c","#4ade80"][st]};font-size:13px;font-weight:800;padding:5px 8px">${STATUS[st]}</td></tr>`;
           }).join("");
-      return `<div class="card"><div class="card-header">${s.number} 號 ${s.name}&nbsp;<span style="font-weight:400;font-size:11px;color:#f97316">未完成進度：${missing.length} 項</span></div><table><thead><tr><th>分類</th><th>作業</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      return `<div class="card"><div class="card-header">${s.number} 號 ${s.name}&nbsp;<span style="font-weight:500;font-size:12px;color:#f97316">未完成：${missing.length} 項</span></div><table><thead><tr><th style="font-size:12px;padding:5px 8px">分類</th><th style="font-size:12px;padding:5px 8px">作業</th><th style="font-size:12px;padding:5px 8px">狀態</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }).join("");
     return `<h3>學生欠繳單${catFilter !== "全部" ? ` — ${catFilter}` : ""} — ${today()}</h3><div class="four-up">${slips}</div>`;
   };
@@ -1192,24 +1220,24 @@ function PrintTab({ students, assignments, progress, engProgress, categories }) 
               .sort((a, b) => (a.category || "").localeCompare(b.category || "", "zh-TW"));
             return (
               <div key={s.number} style={{ border: "2px solid #f97316", borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700, borderBottom: "1px solid #fed7aa", paddingBottom: 4, marginBottom: 8, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 800, borderBottom: "1px solid #fed7aa", paddingBottom: 4, marginBottom: 8, fontSize: 15, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>{s.number} 號 {s.name}</span>
-                  <span style={{ fontWeight: 400, fontSize: 11, color: "#f97316" }}>未完成：{missing.length} 項</span>
+                  <span style={{ fontWeight: 600, fontSize: 12, color: "#f97316" }}>未完成：{missing.length} 項</span>
                 </div>
-                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
-                  <thead><tr><th style={pth}>分類</th><th style={pth}>作業</th><th style={pth}>狀態</th></tr></thead>
+                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                  <thead><tr><th style={{ ...pth, fontSize: 12 }}>分類</th><th style={{ ...pth, fontSize: 12 }}>作業</th><th style={{ ...pth, fontSize: 12 }}>狀態</th></tr></thead>
                   <tbody>
                     {missing.length === 0
-                      ? <tr><td colSpan={3} style={{ ...ptd, color: "#4ade80", textAlign: "center" }}>✅ 全部完成</td></tr>
+                      ? <tr><td colSpan={3} style={{ ...ptd, color: "#4ade80", textAlign: "center", fontSize: 13 }}>✅ 全部完成</td></tr>
                       : missing.map(a => {
                           const st = getStatus(a.id, s.number);
                           const isBookRecite = a.category === "背書";
                           const align = isBookRecite ? "right" : "left";
                           return (
                             <tr key={a.id}>
-                              <td style={{ ...ptd, background: catColor(a.category) + "22", color: catColor(a.category), fontSize: 10, whiteSpace: "nowrap", textAlign: align }}>{a.category}</td>
-                              <td style={{ ...ptd, textAlign: align }}>{a.name}</td>
-                              <td style={{ ...ptd, background: STATUS_COLOR[st] }}>{STATUS[st]}</td>
+                              <td style={{ ...ptd, background: catColor(a.category) + "22", color: catColor(a.category), fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", textAlign: align }}>{a.category}</td>
+                              <td style={{ ...ptd, textAlign: align, fontSize: 13, fontWeight: 700, color: "#1f2937" }}>{a.name}</td>
+                              <td style={{ ...ptd, background: STATUS_COLOR[st], fontSize: 13, fontWeight: 800 }}>{STATUS[st]}</td>
                             </tr>
                           );
                         })}
