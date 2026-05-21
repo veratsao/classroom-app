@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwdkquDzl1hlDPODmsmDh5moRgwPjJg3UTa3PgyqLAjQ2KtXDFzkMchmmRpQX6y0e8pvg/exec";
 
 async function gsLoad() {
-  const res = await fetch(`${GAS_URL}?action=load`);
+  const res = await fetch(`${GAS_URL}?action=load&_=${Date.now()}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
@@ -15,7 +15,7 @@ async function saveSheet(sheetName, data) {
   const arr = data || [];
 
   if (arr.length === 0) {
-    await fetch(`${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}`);
+    await fetch(`${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}&_=${Date.now()}`, { cache: "no-store" });
     return;
   }
 
@@ -23,7 +23,7 @@ async function saveSheet(sheetName, data) {
     const batch = arr.slice(i, i + BATCH_SIZE);
     const action = i === 0 ? "save" : "append";
     const encoded = encodeURIComponent(JSON.stringify(batch));
-    await fetch(`${GAS_URL}?action=${action}&sheet=${sheetName}&data=${encoded}`);
+    await fetch(`${GAS_URL}?action=${action}&sheet=${sheetName}&data=${encoded}&_=${Date.now()}`, { cache: "no-store" });
   }
 }
 
