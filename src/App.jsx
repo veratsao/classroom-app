@@ -11,14 +11,22 @@ async function gsLoad() {
 }
 
 async function saveSheet(sheetName, data) {
-  const BATCH_SIZE = 30;
+  const BATCH_SIZE = 25;
   const arr = data || [];
 
-  if (arr.length === 0) {
-    await fetch(`${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}&_=${Date.now()}`, { cache: "no-store" });
+  // 第一步：先清空分頁（存空陣列）
+  await fetch(`${GAS_URL}?action=save&sheet=${sheetName}&data=${encodeURIComponent("[]")}&_=${Date.now()}`, { cache: "no-store" });
+
+  if (arr.length === 0) return;
+
+  // 第二步：如果只有一批，直接覆蓋寫入
+  if (arr.length <= BATCH_SIZE) {
+    const encoded = encodeURIComponent(JSON.stringify(arr));
+    await fetch(`${GAS_URL}?action=save&sheet=${sheetName}&data=${encoded}&_=${Date.now()}`, { cache: "no-store" });
     return;
   }
 
+  // 第三步：多批次時，先寫第一批（含標題），再 append 其餘批次
   for (let i = 0; i < arr.length; i += BATCH_SIZE) {
     const batch = arr.slice(i, i + BATCH_SIZE);
     const action = i === 0 ? "save" : "append";
@@ -102,12 +110,13 @@ function LoginScreen({ students, onTeacherLogin, onParentLogin }) {
 // ═══════════════════════════════════════════════════════════════
 // PARENT VIEW
 // ═══════════════════════════════════════════════════════════════
-function ParentView({ student, students, assignments, progress, setProgress, engProgress, todos, onLogout, onPasswordChange }) {
+function ParentView({ student, students, assignments, progress, setProgress, engProgress, todos, onLogout, onPasswordChange, allData }) {
   const [showChangePw, setShowChangePw] = useState(false);
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg, setPwMsg] = useState("");
   const [engSection, setEngSection] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   const getStatus = (aid, sn) => progress[aid]?.[sn] ?? 0;
 
@@ -118,6 +127,26 @@ function ParentView({ student, students, assignments, progress, setProgress, eng
     setPwMsg("✅ 密碼已更新！");
     setNewPw(""); setConfirmPw("");
     setTimeout(() => { setPwMsg(""); setShowChangePw(false); }, 1500);
+  };
+
+  const handleBookDone = async (assignmentId) => {
+    const newProgress = { ...progress, [assignmentId]: { ...progress[assignmentId], [student.number]: 2 } };
+    setProgress(newProgress);
+    // 自動儲存
+    setSaving(true);
+    try {
+      const progressRows = [];
+      Object.entries(newProgress).forEach(([aid, sns]) => {
+        Object.entries(sns).forEach(([sn, status]) => {
+          progressRows.push({ assignment_id: Number(aid), student_number: Number(sn), status });
+        });
+      });
+      await saveSheet("progress", progressRows);
+    } catch (e) {
+      console.error("儲存失敗", e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const unfinishedAssign = assignments.filter(a => getStatus(a.id, student.number) < 2);
@@ -178,10 +207,9 @@ function ParentView({ student, students, assignments, progress, setProgress, eng
                     <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #f3f4f6", flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 600, fontSize: 15, color: "#1f2937", flex: 1 }}>{a.name}</span>
                       {isBookRecite ? (
-                        // 背書可以點完成
-                        <button onClick={() => setProgress(prev => ({ ...prev, [a.id]: { ...prev[a.id], [student.number]: 2 } }))}
-                          style={{ border: "2px solid #4ade80", borderRadius: 8, padding: "5px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, background: "#fff", color: "#4ade80" }}>
-                          ✓ 背完了
+                        <button onClick={() => handleBookDone(a.id)} disabled={saving}
+                          style={{ border: "2px solid #4ade80", borderRadius: 8, padding: "5px 16px", cursor: saving ? "wait" : "pointer", fontWeight: 700, fontSize: 13, background: saving ? "#f3f4f6" : "#fff", color: saving ? "#9ca3af" : "#4ade80" }}>
+                          {saving ? "儲存中…" : "✓ 背完了"}
                         </button>
                       ) : (
                         <span style={{ background: STATUS_COLOR[st], borderRadius: 8, padding: "3px 12px", fontWeight: 700, fontSize: 13, color: st === 0 ? "#9ca3af" : "#1f2937", whiteSpace: "nowrap" }}>
