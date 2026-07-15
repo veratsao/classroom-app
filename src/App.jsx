@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwdkquDzl1hlDPODmsmDh5moRgwPjJg3UTa3PgyqLAjQ2KtXDFzkMchmmRpQX6y0e8pvg/exec";
 
 async function gsLoad() {
-  const res = await fetch(`${GAS_URL}?action=load&_=${Date.now()}`);
+  const res = await fetch(`${GAS_URL}?action=load&_=${Date.now()}`, { cache: "no-store" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
@@ -40,6 +40,8 @@ async function gsSave(payload) {
   await saveSheet("assignments",      payload.assignments);
   await saveSheet("categories",       payload.categories);
   await saveSheet("todos",            payload.todos || []);
+  await saveSheet("summer_hw",        payload.summer_hw || []);
+  await saveSheet("summer_progress",  payload.summer_progress || []);
   await saveSheet("progress",         payload.progress);
   await saveSheet("english_progress", payload.english_progress);
 }
@@ -51,7 +53,7 @@ const STATUS_COLOR = ["#e5e7eb", "#fb923c", "#4ade80"];
 const TEACHER_PASSWORD = "800914";
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
-const TABS = ["學生名單", "每日進度", "英文作業", "待辦事項", "表格列印"];
+const TABS = ["學生名單", "每日進度", "英文作業", "待辦事項", "暑假作業", "表格列印"];
 
 const DEFAULT_CATEGORIES = ["評量", "背書", "考卷", "其他"];
 
@@ -302,6 +304,7 @@ export default function App() {
   const [engProgress, setEngProgress] = useState({});
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [todos, setTodos] = useState([]);
+  const [summerHw, setSummerHw] = useState([]); // [{id, title, student_number, status}] status: 0=未完成,1=訂正,2=完成
   const [saving, setSaving] = useState(false);
   const [loadMsg, setLoadMsg] = useState("載入中…");
   const [loaded, setLoaded] = useState(false);
@@ -325,8 +328,18 @@ export default function App() {
         console.log("學生：", s);
         setStudents(s);
 
+        // 日期格式化工具
+        const formatDate = (d) => {
+          if (!d) return "";
+          if (typeof d === "string" && d.includes("T")) {
+            const dt = new Date(d);
+            return `${dt.getFullYear()}/${dt.getMonth()+1}/${dt.getDate()}`;
+          }
+          return String(d);
+        };
+
         // assignments
-        const a = (data.assignments || []).map(a => ({ id: Number(a.id), name: a.name, date: a.date, category: a.category || "其他" }));
+        const a = (data.assignments || []).map(a => ({ id: Number(a.id), name: a.name, date: formatDate(a.date), category: a.category || "其他" }));
         console.log("作業：", a);
         setAssignments(a);
 
@@ -359,6 +372,21 @@ export default function App() {
           done: t.done === "true" || t.done === true,
         }));
         setTodos(todosData);
+
+        // summer_hw: merge defs + progress
+        const summerDefs = (data.summer_hw || []).map(h => ({
+          id: Number(h.id) || String(h.id),
+          name: h.name,
+          category: h.category || "暑假",
+          date: formatDate(h.date),
+          progress: {},
+        }));
+        const summerProgRows = (data.summer_progress || []);
+        summerProgRows.forEach(({ hw_id, student_number, status }) => {
+          const hw = summerDefs.find(h => String(h.id) === String(hw_id));
+          if (hw) hw.progress[Number(student_number)] = Number(status);
+        });
+        setSummerHw(summerDefs);
         console.log("待辦：", todosData);
 
       } catch (err) {
@@ -388,6 +416,17 @@ export default function App() {
       // categories → rows
       const catRows = categories.map(name => ({ name }));
 
+      // Flatten summerHw: separate hw definitions and progress
+      const summerHwDefs = summerHw.map(({ id, name, category, date }) => ({ id, name, category, date }));
+      const summerProgressRows = [];
+      summerHw.forEach(h => {
+        if (h.progress) {
+          Object.entries(h.progress).forEach(([sn, status]) => {
+            summerProgressRows.push({ hw_id: h.id, student_number: Number(sn), status });
+          });
+        }
+      });
+
       await gsSave({
         students,
         assignments,
@@ -395,6 +434,8 @@ export default function App() {
         english_progress: epRows,
         categories: catRows,
         todos,
+        summer_hw: summerHwDefs,
+        summer_progress: summerProgressRows,
       });
 
       alert("✅ 儲存成功！");
@@ -467,7 +508,8 @@ export default function App() {
         {tab === 1 && <DailyTab students={students} assignments={assignments} setAssignments={setAssignments} progress={progress} setProgress={setProgress} categories={categories} setCategories={setCategories} todos={todos} setTodos={setTodos} />}
         {tab === 2 && <EnglishTab students={students} engProgress={engProgress} setEngProgress={setEngProgress} />}
         {tab === 3 && <TodoTab students={students} todos={todos} setTodos={setTodos} />}
-        {tab === 4 && <PrintTab students={students} assignments={assignments} progress={progress} engProgress={engProgress} categories={categories} />}
+        {tab === 4 && <SummerHwTab students={students} summerHw={summerHw} setSummerHw={setSummerHw} />}
+        {tab === 5 && <PrintTab students={students} assignments={assignments} progress={progress} engProgress={engProgress} categories={categories} />}
       </main>
     </div>
   );
@@ -1078,6 +1120,215 @@ function TodoTab({ students, todos, setTodos }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TAB 5: 假期作業
+// ═══════════════════════════════════════════════════════════════
+function SummerHwTab({ students, summerHw, setSummerHw }) {
+  const [categories, setCategories] = useState(["寒假", "暑假", "其他"]);
+  const [newHwName, setNewHwName] = useState("");
+  const [newHwCat, setNewHwCat] = useState("暑假");
+  const [editId, setEditId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [catFilter, setCatFilter] = useState("全部");
+  const [filter, setFilter] = useState(null); // quick search student number
+  const [newCatName, setNewCatName] = useState("");
+  const [showCatMgr, setShowCatMgr] = useState(false);
+
+  useEffect(() => { if (!newHwCat && categories.length) setNewHwCat(categories[0]); }, [categories]);
+
+  const catColors = ["#3b82f6","#f97316","#8b5cf6","#ec4899","#14b8a6","#f59e0b","#10b981"];
+  const catColor = (cat) => catColors[categories.indexOf(cat) % catColors.length] || "#9ca3af";
+
+  const addHw = () => {
+    if (!newHwName.trim()) return;
+    const id = Date.now();
+    // 新增一個作業，所有學生預設未完成（status=0），不需要為每個學生建立紀錄，動態計算
+    setSummerHw(prev => [{ id, name: newHwName.trim(), category: newHwCat || categories[0], date: today() }, ...prev]);
+    setNewHwName("");
+  };
+
+  const delHw = (id) => setSummerHw(prev => prev.filter(h => h.id !== id));
+
+  const saveEdit = (id) => {
+    setSummerHw(prev => prev.map(h => h.id === id ? { ...h, name: editName } : h));
+    setEditId(null);
+  };
+
+  // progress is stored as summerProgress: { hw_id: { student_number: status } }
+  // We reuse summerHw array but separate "assignments" (hw defs) from "progress" (student statuses)
+  // Store: summerHw = [{id, name, category, date}], summerProgress inside each hw as .progress
+  const getStatus = (hwId, sn) => {
+    const hw = summerHw.find(h => h.id == hwId);
+    return hw?.progress?.[sn] ?? 0;
+  };
+
+  const cycleStatus = (hwId, sn) => {
+    setSummerHw(prev => prev.map(h => {
+      if (h.id != hwId) return h;
+      const cur = h.progress?.[sn] ?? 0;
+      return { ...h, progress: { ...h.progress, [sn]: (cur + 1) % 3 } };
+    }));
+  };
+
+  const setStatusDirect = (hwId, sn, val) => {
+    setSummerHw(prev => prev.map(h => {
+      if (h.id != hwId) return h;
+      return { ...h, progress: { ...h.progress, [sn]: val } };
+    }));
+  };
+
+  const addCategory = () => {
+    const n = newCatName.trim();
+    if (!n || categories.includes(n)) return;
+    setCategories(prev => [...prev, n]);
+    setNewCatName("");
+  };
+
+  const delCategory = (cat) => setCategories(prev => prev.filter(c => c !== cat));
+
+  const visibleHw = catFilter === "全部" ? summerHw : summerHw.filter(h => h.category === catFilter);
+  const unfinishedHw = filter !== null ? visibleHw.filter(h => getStatus(h.id, filter) < 2) : [];
+
+  return (
+    <div>
+      <h2 style={h2}>🏖 假期作業</h2>
+
+      {/* 分類管理 */}
+      <div style={card}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showCatMgr ? 14 : 0 }}>
+          <div style={{ fontWeight: 700, color: "#374151" }}>🏷 分類管理</div>
+          <button onClick={() => setShowCatMgr(!showCatMgr)} style={{ ...btnGray, padding: "4px 14px", fontSize: 13 }}>
+            {showCatMgr ? "收起 ▲" : "管理分類 ▼"}
+          </button>
+        </div>
+        {showCatMgr && (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {categories.map(cat => (
+                <div key={cat} style={{ display: "flex", alignItems: "center", gap: 6, background: catColor(cat) + "22", border: `1.5px solid ${catColor(cat)}`, borderRadius: 20, padding: "4px 12px" }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: catColor(cat) }}>{cat}</span>
+                  <button onClick={() => delCategory(cat)} style={{ background: "none", border: "none", cursor: "pointer", color: catColor(cat), fontSize: 14, lineHeight: 1, padding: 0 }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <input value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addCategory()}
+                placeholder="新增分類名稱…" style={{ ...inp, flex: 1 }} />
+              <button onClick={addCategory} style={btnOrange}>新增分類</button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 新增作業 */}
+      <div style={card}>
+        <div style={{ fontWeight: 700, color: "#374151", marginBottom: 12 }}>➕ 新增假期作業</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={newHwCat} onChange={e => setNewHwCat(e.target.value)} style={{ ...inp, minWidth: 90, background: "#fff" }}>
+            {categories.map(c => <option key={c}>{c}</option>)}
+          </select>
+          <input value={newHwName} onChange={e => setNewHwName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addHw()}
+            placeholder="作業名稱…" style={{ ...inp, flex: 1, minWidth: 180 }} />
+          <button onClick={addHw} style={btnOrange}>新增</button>
+        </div>
+      </div>
+
+      {/* 分類篩選 */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+        {["全部", ...categories].map(cat => (
+          <button key={cat} onClick={() => setCatFilter(cat)}
+            style={{ ...chipBtn, background: catFilter === cat ? (cat === "全部" ? "#374151" : catColor(cat)) : "#f3f4f6", color: catFilter === cat ? "#fff" : "#374151", border: catFilter === cat ? "none" : "1.5px solid #e5e7eb" }}>
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* 快速查找 */}
+      <div style={card}>
+        <div style={{ fontWeight: 700, marginBottom: 10, color: "#374151" }}>🔍 快速查找學生未完成項目</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {students.map(s => (
+            <button key={s.number} onClick={() => setFilter(filter === s.number ? null : s.number)}
+              style={{ ...chipBtn, background: filter === s.number ? "#f97316" : "#f3f4f6", color: filter === s.number ? "#fff" : "#374151" }}>
+              {s.number} {s.name}
+            </button>
+          ))}
+          {filter !== null && <button onClick={() => setFilter(null)} style={{ ...chipBtn, background: "#ef4444", color: "#fff" }}>清除</button>}
+        </div>
+        {filter !== null && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontWeight: 700, color: "#f97316", marginBottom: 8, fontSize: 15 }}>
+              {students.find(s => s.number === filter)?.name} 未完成假期作業：
+            </div>
+            {unfinishedHw.length === 0
+              ? <div style={{ color: "#4ade80", fontWeight: 700, fontSize: 15, padding: "8px 0" }}>✅ 全部完成！</div>
+              : unfinishedHw.map(h => {
+                  const st = getStatus(h.id, filter);
+                  return (
+                    <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", marginBottom: 8, background: "#f9f7f4", borderRadius: 10, border: "1px solid #f3f4f6" }}>
+                      <span style={{ background: catColor(h.category) + "22", color: catColor(h.category), borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{h.category}</span>
+                      <span style={{ flex: 1, fontSize: 16, fontWeight: 600, color: "#1f2937" }}>{h.name}</span>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        {STATUS.map((label, i) => (
+                          <button key={i} onClick={() => setStatusDirect(h.id, filter, i)}
+                            style={{ border: "2px solid", borderColor: st === i ? ["#9ca3af","#f97316","#4ade80"][i] : "#e5e7eb", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 13, background: st === i ? STATUS_COLOR[i] : "#fff", color: st === i ? (i === 0 ? "#6b7280" : "#1f2937") : "#9ca3af", transition: "all .15s" }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+          </div>
+        )}
+      </div>
+
+      {/* 作業清單 + 全班狀態格子 */}
+      {visibleHw.length === 0 && <div style={{ color: "#9ca3af", textAlign: "center", padding: 40 }}>尚無假期作業</div>}
+      {visibleHw.map(h => (
+        <div key={h.id} style={{ ...card, borderLeft: `4px solid ${catColor(h.category)}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+            <span style={{ background: catColor(h.category) + "22", color: catColor(h.category), borderRadius: 10, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>{h.category}</span>
+            {editId === h.id ? (
+              <>
+                <input value={editName} onChange={e => setEditName(e.target.value)} style={{ ...inp, flex: 1, minWidth: 160 }} />
+                <button onClick={() => saveEdit(h.id)} style={btnOrange}>儲存</button>
+                <button onClick={() => setEditId(null)} style={btnGray}>取消</button>
+              </>
+            ) : (
+              <>
+                <span style={{ fontWeight: 700, fontSize: 17, color: "#1f2937", flex: 1 }}>{h.name}</span>
+                <span style={{ color: "#9ca3af", fontSize: 13 }}>{h.date}</span>
+                <button onClick={() => { setEditId(h.id); setEditName(h.name); }} style={btnGray}>✏️ 改名</button>
+                <button onClick={() => delHw(h.id)} style={{ ...btnGray, color: "#ef4444" }}>🗑 刪除</button>
+              </>
+            )}
+          </div>
+          {/* 全班狀態格子 */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {students.map(s => {
+              const st = getStatus(h.id, s.number);
+              return (
+                <button key={s.number} onClick={() => cycleStatus(h.id, s.number)}
+                  title={STATUS[st]}
+                  style={{ width: 56, padding: "4px 0", border: "none", borderRadius: 8, cursor: "pointer", background: STATUS_COLOR[st], transition: "all .15s", fontWeight: 700, fontSize: 13, color: st === 0 ? "#9ca3af" : "#1f2937" }}>
+                  <div>{s.number}</div>
+                  <div style={{ fontSize: 10, fontWeight: 400 }}>{STATUS[st]}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAB 6: 表格列印
+// ═══════════════════════════════════════════════════════════════
 function PrintTab({ students, assignments, progress, engProgress, categories }) {
   const [printType, setPrintType] = useState("overview");
   const [selectedStudents, setSelectedStudents] = useState([]);
